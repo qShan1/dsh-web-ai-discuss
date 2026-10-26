@@ -1,0 +1,7 @@
+- insert:
+    - id: web-ai-discuss
+      name: 'dsh-web-ai-discuss'
+      config:
+        spaceName: dsh-web-ai-discuss
+        minGapMs: 7000
+        windowLimit: 6

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DeepSeek 讨论桥",
+    "description": "把已登录的网页版 DeepSeek 作为外部思路讨论来源接入工作流：经本机 ego lite 完成全部网页交互，带串行/间隔/频率三重护栏。"
+  }
+}

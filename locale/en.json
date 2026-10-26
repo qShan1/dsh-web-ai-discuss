@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DeepSeek Talk Bridge",
+    "description": "Brings the logged-in DeepSeek web app into the workflow as an outside discussion source through the local ego lite engine, with serial, gap and quota guardrails."
+  }
+}
