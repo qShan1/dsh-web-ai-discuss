@@ -318,7 +318,7 @@ globalThis.fetch = (url, init) => {
     }),
   });
 };
-const LS_KEY_TEST = '***';
+const LS_KEY_TEST = 'dsh-web-ai-discuss:ui';
 const allRegs2 = [];
 const ctx2 = {
   slots: {

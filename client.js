@@ -3,17 +3,20 @@
  *
  * 三块 UI：
  *   1. sidebar.panellist  侧边栏格子（图标）
- *   2. main               中央面板：紧凑布局，静态说明折叠，设置区展开才挂载/请求
+ *   2. main               中央面板：紧凑层级，静态说明折叠，设置区展开才挂载/请求
  *   3. tool.call.toolview web_ai_discuss 的会话卡片（每会话首次挂载自动开面板一次）
  *
- * 性能约定（上一版卡顿的教训）：
- *   - 面板首屏零网络：设置表单只在 <details> 展开时挂载并 fetch 一次，结果缓存在模块级；
- *   - 输入框全部非受控（defaultValue），输入不触发任何 React 渲染；
- *   - 静态文案 React.memo，重渲染时子树引用不变直接跳过；
- *   - fetch 带 AbortController，卸载即中止，不留悬挂请求。
+ * 样式约定：
+ *   - 全部走宿主主题 token（--dsw-alias-*），只带安全 fallback；
+ *   - 不做系统字体以外的字体替换：面板要融进宿主，不抢戏；
+ *   - 交互状态（hover / focus-visible / active / disabled）由注入的命名空间 CSS 承担，
+ *     内联样式只负责结构性尺寸。
  *
- * 宿主与客户端之间没有通用数据通道，真实讨论结果在会话里的工具卡片上，
- * 面板只承载说明与设置编辑（经 /web-ai-discuss/api/settings）。
+ * 性能约定：
+ *   - 面板首屏零网络：设置表单只在折叠展开时挂载并 fetch 一次，结果模块级缓存；
+ *   - 输入框全部非受控（defaultValue），输入不触发 React 渲染；
+ *   - 静态文案 React.memo，重渲染时子树引用不变直接跳过；
+ *   - fetch 带 AbortController，卸载即中止。
  */
 
 window.__ModuleLoader__.load({
@@ -42,26 +45,27 @@ window.__ModuleLoader__.load({
       ? {
         panel: 'DeepSeek 讨论',
         title: '外部讨论通道',
-        lead: '把已登录的网页版 DeepSeek 当作外部思路来源；网页操作全部经本机 ego lite 完成，不构造协议、不接管登录。',
-        when: '只在需要多角度讨论 / 评审 / 方案对比 / 找反例时调用；日常问答、事实查询、代码补全不要走这里。',
-        store: '讨论记录写入 DSH 存储目录下的 web-ai-discuss/，用 web_ai_read_discussion 读回（支持 id / search / live）。',
+        lead: '把已登录的网页版 DeepSeek 当作外部思路来源。网页操作全部经本机 ego lite 完成，不构造协议、不接管登录。',
+        when: '只在需要多角度讨论、评审、方案对比或找反例时调用；日常问答、事实查询、代码补全不要走这里。',
+        store: '讨论记录落在 DSH 存储目录的 web-ai-discuss/ 下，用 web_ai_read_discussion 读回（id / search / live）。',
         usageTitle: '用法与说明',
         template: '用 web_ai_discuss 和 DeepSeek 讨论：',
         copy: '复制调用模板',
+        copyAnswer: '复制',
+        empty: '这次调用没有带回内容。',
         copied: '已复制',
         settingsTitle: '自定义设置',
-        settingsHint: '写入 settings.json，叠加在 patch 默认值之上，保存即生效。护栏字段可在合法区间内调，但关不掉；egoPath / storeDir / 空间名等定位字段只走 cordis.patch.yml。',
+        settingsHint: '写入 settings.json，叠加在 patch 默认值之上，保存即生效。护栏只能往上调；egoPath / storeDir / 空间名这类定位字段仍只走 cordis.patch.yml。',
         settingsLoading: '读取设置…',
-        settingsLoadFail: '读取设置失败（宿主路由未挂载？）：',
+        settingsLoadFail: '读取设置失败（宿主路由未挂载？）',
         settingsRetry: '重试',
         settingsSave: '保存修改',
         settingsSaving: '保存中…',
         settingsSaved: '已保存并生效',
-        settingsFail: '保存失败：',
+        settingsFail: '保存失败',
         settingsFloor: '下限',
         settingsReload: '重新读取',
         settingsRestore: '恢复默认',
-        settingsDirty: '未保存的修改',
         groupUi: '显示位置',
         groupGuard: '护栏',
         groupJudge: '发送与判定',
@@ -69,53 +73,55 @@ window.__ModuleLoader__.load({
         placementLabel: '入口位置',
         placementOpts: { sidebar: '侧边栏图标', settings: '设置页分区', both: '两处都显示' },
         dockLabel: '输入框下方快捷入口',
-        placementNote: '保存后几秒内自动挪动（或刷新页面立即生效）；工具卡片不受位置设置影响，始终在会话流里显示结果。',
+        placementNote: '保存后几秒内自动挪动入口，或刷新页面立即生效。会话里的结果卡片不受位置影响。',
         guardTitle: '三重护栏（不可关闭）',
         guards: [
           ['全局串行', '同一时刻只允许一次讨论，并发调用立刻返回 code=busy'],
-          ['随机最小间隔', '两次讨论之间至少 7s + 0–3s 随机抖动'],
+          ['随机最小间隔', '两次讨论之间至少 7 秒，再加 0–3 秒随机抖动'],
           ['窗口频率上限', '每 60 分钟最多 6 次，超额返回 code=rate_limited'],
         ],
         codesTitle: '返回码',
         codes: [
           ['ok', '拿到回答，answer 为清洗后的原文'],
-          ['unauthorized', '网页端需要人接管，浏览器已交给用户；不要在对话里转述登录'],
-          ['busy / rate_limited', '已有讨论在跑 / 窗口配额用尽（带 retryAfterMs）'],
+          ['unauthorized', '网页端需要人接管，浏览器已交给用户；不在对话里转述登录'],
+          ['busy', '已有讨论在跑'],
+          ['rate_limited', '窗口内次数用尽，带 retryAfterMs'],
           ['unavailable', '本机找不到 ego-browser'],
           ['timeout', '等到超时仍没等到可判定完成的回答'],
-          ['failed(send_failed)', '三次发送确认都未送达，快速失败不白等'],
+          ['send_failed', '三次发送确认都没送达，快速失败不空等'],
         ],
         limitsTitle: '已知限制',
         limits: [
           '依赖本机 ego-browser CLI（无 MCP 形态），插件以子进程方式调用它',
           '讨论空间在 ego 里保持存活以便追问，插件刻意不调用 finish',
-          '护栏作用域是插件进程；跨进程并发不在保护范围内',
+          '护栏作用域是插件进程，跨进程并发不在保护范围内',
           '网页改版会影响 DOM 选择器，届时需更新 lib/script.js',
         ],
       }
       : {
         panel: 'DeepSeek talk',
         title: 'External discussion channel',
-        lead: 'Pipes the logged-in DeepSeek web app in as an outside opinion through the local ego lite engine: no protocol construction, no sign-in handling.',
+        lead: 'Pipes the logged-in DeepSeek web app in as an outside opinion. Every page interaction goes through the local ego lite engine: no protocol construction, no sign-in handling.',
         when: 'Call it only for multi-angle discussion, reviews, option comparisons, or counter-examples. Not for everyday questions, fact lookups, or code completion.',
         store: 'Records land in web-ai-discuss/ under the DSH storage directory; read them back with web_ai_read_discussion (id / search / live).',
         usageTitle: 'Usage & notes',
         template: 'Use web_ai_discuss to discuss with DeepSeek: ',
         copy: 'Copy call template',
+        copyAnswer: 'Copy',
+        empty: 'This call returned no content.',
         copied: 'Copied',
         settingsTitle: 'Settings',
-        settingsHint: 'Saved to settings.json on top of patch defaults, applied live. Guardrail fields move within legal bounds but cannot be switched off; egoPath / storeDir / space name stay patch-file only.',
-        settingsLoading: 'Loading settings...',
-        settingsLoadFail: 'Failed to load settings (host route not mounted?): ',
+        settingsHint: 'Saved to settings.json on top of patch defaults, applied live. Guardrails only move upward; egoPath / storeDir / space name stay patch-file only.',
+        settingsLoading: 'Loading settings…',
+        settingsLoadFail: 'Failed to load settings (host route not mounted?)',
         settingsRetry: 'Retry',
         settingsSave: 'Save changes',
-        settingsSaving: 'Saving...',
+        settingsSaving: 'Saving…',
         settingsSaved: 'Saved and applied',
-        settingsFail: 'Save failed: ',
+        settingsFail: 'Save failed',
         settingsFloor: 'min',
         settingsReload: 'Reload',
         settingsRestore: 'Restore defaults',
-        settingsDirty: 'unsaved changes',
         groupUi: 'Placement',
         groupGuard: 'Guardrails',
         groupJudge: 'Send & completion',
@@ -123,7 +129,7 @@ window.__ModuleLoader__.load({
         placementLabel: 'Entry placement',
         placementOpts: { sidebar: 'Sidebar icon', settings: 'Settings section', both: 'Both' },
         dockLabel: 'Composer chip',
-        placementNote: 'Takes effect within seconds after saving (or refresh the page now); the tool card in the conversation flow always shows results regardless of placement.',
+        placementNote: 'Takes effect within seconds after saving, or right away after a page refresh. Result cards in the conversation are unaffected.',
         guardTitle: 'Three guardrails (not disableable)',
         guards: [
           ['Global serial', 'One discussion at a time; a concurrent call returns code=busy'],
@@ -134,10 +140,11 @@ window.__ModuleLoader__.load({
         codes: [
           ['ok', 'Answer captured and cleaned in answer'],
           ['unauthorized', 'The page needs a human; control was handed off, no sign-in text emitted'],
-          ['busy / rate_limited', 'A discussion is running / window quota exhausted (retryAfterMs)'],
+          ['busy', 'A discussion is already running'],
+          ['rate_limited', 'Window quota exhausted, carries retryAfterMs'],
           ['unavailable', 'ego-browser not found on this machine'],
           ['timeout', 'No completable answer before the deadline'],
-          ['failed(send_failed)', 'Three send confirmations failed; fast fail, no dead wait'],
+          ['send_failed', 'Three send confirmations failed; fast fail, no dead wait'],
         ],
         limitsTitle: 'Known limits',
         limits: [
@@ -148,143 +155,332 @@ window.__ModuleLoader__.load({
         ],
       };
 
-    // ── 样式（只用主题变量，带 fallback） ──
-    const S = {
-      root: {
-        height: '100%',
-        overflowY: 'auto',
-        padding: '18px 22px 28px',
-        font: 'inherit',
-        color: 'var(--dsw-alias-text-primary, inherit)',
-        lineHeight: 1.55,
-      },
-      h1: { fontSize: 15, fontWeight: 600, margin: 0 },
-      sub: { fontSize: 11.5, color: 'var(--dsw-alias-text-secondary, #8a8a8a)', margin: '2px 0 12px' },
-      p: { fontSize: 12.5, margin: '0 0 10px', opacity: 0.92 },
-      note: {
-        fontSize: 12,
-        borderRadius: 8,
-        padding: '8px 11px',
-        border: '1px dashed var(--dsw-alias-border-primary, rgba(127,127,127,0.35))',
-        opacity: 0.92,
-        marginBottom: 12,
-      },
-      card: {
-        border: '1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.25))',
-        borderRadius: 8,
-        padding: '9px 11px',
-        margin: '0 0 8px',
-        fontSize: 12.5,
-      },
-      k: { fontWeight: 600, marginBottom: 2 },
-      d: { opacity: 0.82, fontSize: 12 },
-      code: {
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-        fontSize: 11.5,
-        padding: '1px 5px',
-        borderRadius: 4,
-        background: 'var(--dsw-alias-bg-secondary, rgba(127,127,127,0.14))',
-      },
-      li: { fontSize: 12.5, margin: '0 0 5px', paddingLeft: 14, position: 'relative' },
-      bullet: { position: 'absolute', left: 0, opacity: 0.5 },
-      button: {
-        font: 'inherit',
-        fontSize: 12,
-        padding: '4px 10px',
-        borderRadius: 6,
-        cursor: 'pointer',
-        color: 'var(--dsw-alias-text-primary, inherit)',
-        background: 'var(--dsw-alias-bg-secondary, rgba(127,127,127,0.14))',
-        border: '1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.3))',
-      },
-      row: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
-      fold: {
-        border: '1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.25))',
-        borderRadius: 8,
-        padding: '0 12px',
-        margin: '0 0 10px',
-      },
-      summary: {
-        cursor: 'pointer',
-        padding: '9px 0',
-        fontSize: 12.5,
-        fontWeight: 600,
-        listStyle: 'none',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        userSelect: 'none',
-      },
-      caret: { fontSize: 10, opacity: 0.6, transition: 'transform .12s ease' },
-      foldBody: { padding: '2px 0 12px' },
-      groupLabel: { fontSize: 11, fontWeight: 600, opacity: 0.75, margin: '8px 0 4px', letterSpacing: '0.04em' },
-      fieldRow: { display: 'grid', gridTemplateColumns: 'minmax(90px, 150px) minmax(90px, 120px) 80px', gap: 8, alignItems: 'center', marginBottom: 5, fontSize: 12 },
-      input: {
-        font: 'inherit',
-        fontSize: 12,
-        width: '100%',
-        boxSizing: 'border-box',
-        padding: '3px 7px',
-        borderRadius: 6,
-        border: '1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.3))',
-        background: 'var(--dsw-alias-bg-secondary, rgba(127,127,127,0.10))',
-        color: 'inherit',
-      },
-      floorTag: { fontSize: 10.5, opacity: 0.55 },
-    };
+    /* @wai-css-start */
+    const CSS = `
+.wai-root {
+  height: 100%;
+  overflow-y: auto;
+  padding: 20px 24px 32px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dsw-alias-text-primary, inherit);
+  -webkit-font-smoothing: antialiased;
+}
+.wai-root *, .wai-chip-card * { box-sizing: border-box; }
+.wai-wrap { max-width: 72ch; }
 
-    const caretStyle = (open) => ({ ...S.caret, transform: open ? 'rotate(90deg)' : 'none' });
+.wai-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 2px; }
+.wai-h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.wai-sub {
+  font-size: 12px;
+  color: var(--dsw-alias-text-secondary, #6b6b6b);
+  font-variant-numeric: tabular-nums;
+}
 
-    /** 折叠块：纯 DOM 行为，React 不追踪 open 状态（除非需要懒挂载）。 */
-    function Fold(props) {
-      const { title, children, onToggle } = props;
-      return h('details', { style: S.fold, onToggle },
-        h('summary', { style: S.summary },
-          h('span', { style: S.caret }, '▸'),
-          title),
-        h('div', { style: S.foldBody }, children));
+.wai-lead { margin: 10px 0 0; font-size: 13px; line-height: 1.65; }
+.wai-note {
+  margin: 12px 0 0;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  background: var(--dsw-alias-bg-secondary, rgba(127,127,127,0.09));
+  border: 1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.24));
+  color: var(--dsw-alias-text-primary, inherit);
+}
+
+.wai-fold {
+  margin: 18px 0 0;
+  border-top: 1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.24));
+}
+.wai-fold > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-text-primary, inherit);
+  user-select: none;
+  border-radius: 6px;
+}
+.wai-fold > summary::-webkit-details-marker { display: none; }
+.wai-fold > summary::marker { content: ''; }
+.wai-fold > summary:hover .wai-caret { opacity: 1; }
+.wai-fold > summary:focus-visible {
+  outline: 2px solid var(--dsw-alias-accent, #4b7bec);
+  outline-offset: 2px;
+}
+.wai-caret {
+  flex: none;
+  opacity: 0.62;
+  transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.wai-fold[open] > summary .wai-caret { transform: rotate(90deg); }
+.wai-fold-body { padding: 2px 0 6px; }
+
+.wai-section-label {
+  margin: 16px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--dsw-alias-text-secondary, #6b6b6b);
+}
+.wai-section-label:first-child { margin-top: 4px; }
+
+.wai-row {
+  display: grid;
+  grid-template-columns: minmax(96px, max-content) minmax(0, 1fr);
+  gap: 6px 14px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.16));
+}
+.wai-row:last-child { border-bottom: 0; }
+.wai-row-k { font-size: 12.5px; font-weight: 600; }
+.wai-row-d {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--dsw-alias-text-secondary, #6b6b6b);
+}
+.wai-row-d code, .wai-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-secondary, rgba(127,127,127,0.12));
+  color: var(--dsw-alias-text-primary, inherit);
+  white-space: nowrap;
+}
+
+.wai-list { margin: 0; padding: 0; list-style: none; }
+.wai-list > li {
+  position: relative;
+  padding: 5px 0 5px 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--dsw-alias-text-secondary, #6b6b6b);
+}
+.wai-list > li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 13px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.wai-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+.wai-btn {
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.2;
+  min-height: 30px;
+  padding: 6px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--dsw-alias-text-primary, inherit);
+  background: var(--dsw-alias-bg-secondary, rgba(127,127,127,0.1));
+  border: 1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.3));
+  transition: background-color 120ms ease, border-color 120ms ease, opacity 120ms ease;
+}
+.wai-btn:hover { background: var(--dsw-alias-bg-tertiary, rgba(127,127,127,0.18)); }
+.wai-btn:active { transform: translateY(0.5px); }
+.wai-btn:focus-visible {
+  outline: 2px solid var(--dsw-alias-accent, #4b7bec);
+  outline-offset: 2px;
+}
+.wai-btn[disabled] {
+  cursor: default;
+  opacity: 0.5;
+  background: var(--dsw-alias-bg-secondary, rgba(127,127,127,0.1));
+}
+.wai-btn-primary {
+  background: var(--dsw-alias-accent, #4b7bec);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+}
+.wai-btn-primary:hover { background: var(--dsw-alias-accent-hover, #3d6bd8); }
+/* 强调色不可控时，实心填充的白字在暗色主题容易掉到 4.5:1 以下；
+   有 color-mix 就改用同色系的淡底 + 强调色文字，两边主题都稳。 */
+@supports (background: color-mix(in srgb, red 10%, transparent)) {
+  .wai-btn-primary {
+    background: color-mix(in srgb, var(--dsw-alias-accent, #4b7bec) 14%, transparent);
+    border-color: color-mix(in srgb, var(--dsw-alias-accent, #4b7bec) 48%, transparent);
+    color: var(--dsw-alias-accent, #4b7bec);
+  }
+  .wai-btn-primary:hover { background: color-mix(in srgb, var(--dsw-alias-accent, #4b7bec) 24%, transparent); }
+}
+
+.wai-field {
+  display: grid;
+  grid-template-columns: minmax(120px, max-content) minmax(0, 170px) minmax(0, max-content);
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 12.5px;
+}
+.wai-field-label { color: var(--dsw-alias-text-primary, inherit); }
+.wai-field-hint {
+  font-size: 12px;
+  color: var(--dsw-alias-text-secondary, #6b6b6b);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.wai-input {
+  font: inherit;
+  font-size: 12.5px;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  color: var(--dsw-alias-text-primary, inherit);
+  background: var(--dsw-alias-bg-secondary, rgba(127,127,127,0.08));
+  border: 1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.3));
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.wai-input:hover { border-color: var(--dsw-alias-border-strong, rgba(127,127,127,0.45)); }
+.wai-input:focus-visible {
+  outline: 2px solid var(--dsw-alias-accent, #4b7bec);
+  outline-offset: 1px;
+  background: var(--dsw-alias-bg-primary, transparent);
+}
+.wai-input-wide { grid-column: 2 / -1; }
+.wai-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  cursor: pointer;
+}
+.wai-check input { width: 16px; height: 16px; accent-color: var(--dsw-alias-accent, #4b7bec); cursor: pointer; }
+.wai-check input:focus-visible { outline: 2px solid var(--dsw-alias-accent, #4b7bec); outline-offset: 2px; }
+
+.wai-status {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.wai-status-ok { color: var(--dsw-alias-state-success, #128a4a); }
+.wai-status-error {
+  color: var(--dsw-alias-state-error, #c0392b);
+  white-space: pre-wrap;
+}
+
+.wai-card {
+  border: 1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.26));
+  border-radius: 10px;
+  padding: 11px 13px;
+  background: var(--dsw-alias-bg-primary, transparent);
+}
+.wai-card + .wai-card { margin-top: 10px; }
+.wai-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wai-card-title { font-size: 12.5px; font-weight: 600; }
+.wai-badge {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.wai-card-body {
+  margin-top: 7px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.wai-muted { font-size: 12px; color: var(--dsw-alias-text-secondary, #6b6b6b); }
+.wai-muted + .wai-muted { margin-top: 4px; }
+
+.wai-root ::selection, .wai-card ::selection {
+  background: var(--dsw-alias-accent, #4b7bec);
+  color: #fff;
+}
+.wai-root, .wai-card-body {
+  scrollbar-color: var(--dsw-alias-border-strong, rgba(127,127,127,0.5)) transparent;
+  scrollbar-width: thin;
+}
+.wai-root::-webkit-scrollbar, .wai-card-body::-webkit-scrollbar { width: 10px; height: 10px; }
+.wai-root::-webkit-scrollbar-thumb, .wai-card-body::-webkit-scrollbar-thumb {
+  background: var(--dsw-alias-border-primary, rgba(127,127,127,0.35));
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+@media (max-width: 560px) {
+  .wai-root { padding: 16px 16px 26px; }
+  .wai-field { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .wai-input-wide { grid-column: 1 / -1; }
+  .wai-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wai-caret, .wai-btn, .wai-input { transition: none; }
+}
+`;
+    /* @wai-css-end */
+
+    const STYLE_ID = 'dsh-web-ai-discuss-styles';
+    function ensureStyles() {
+      try {
+        if (typeof document === 'undefined') return;
+        if (document.getElementById(STYLE_ID)) return;
+        const el = document.createElement('style');
+        el.id = STYLE_ID;
+        el.textContent = CSS;
+        document.head.appendChild(el);
+      } catch (e) { /* 非浏览器环境忽略 */ }
     }
 
-    /** 懒挂载折叠块：展开瞬间才渲染 children（设置区靠它做到首屏零请求）。 */
-    function LazyFold(props) {
-      const { title, children } = props;
+    const cx = (...names) => names.filter(Boolean).join(' ');
+
+    /** 折叠块（纯 DOM 行为）。说明区也走懒挂载：首屏只渲染标题与摘要。 */
+    function Fold(props) {
       const [open, setOpen] = React.useState(false);
       return h('details', {
-        style: S.fold,
+        className: 'wai-fold',
         onToggle: (e) => setOpen(!!e.currentTarget.open),
       },
-        h('summary', { style: S.summary },
-          h('span', { style: caretStyle(open) }, '▸'),
-          title),
-        open ? h('div', { style: S.foldBody }, children) : null);
+        h('summary', null,
+          h(Caret, null),
+          h('span', null, props.title)),
+        open ? h('div', { className: 'wai-fold-body' }, props.children) : null);
     }
 
-    const StaticInfo = React.memo(function StaticInfo(props) {
-      const copy = () => {
-        try {
-          Promise.resolve(navigator.clipboard.writeText(`${T.template}<你的问题>`)).then(() => {
-            props.onCopied();
-            setTimeout(props.onCopied, 1500);
-          }).catch(() => {});
-        } catch (e) { /* ignore */ }
-      };
-      return h('div', null,
-        h('p', { style: S.p }, T.lead),
-        h('div', { style: S.note }, T.when),
-        h(LazyFold, { title: T.usageTitle },
-          h('div', { style: S.row },
-            h('button', { style: S.button, onClick: copy }, props.copied ? T.copied : T.copy)),
-          h('div', { style: { ...S.d, marginTop: 8 } }, T.store),
-          h('div', { style: S.groupLabel }, T.guardTitle),
-          T.guards.map(([k, d]) => h('div', { style: S.card, key: k },
-            h('div', { style: S.k }, k), h('div', { style: S.d }, d))),
-          h('div', { style: S.groupLabel }, T.codesTitle),
-          T.codes.map(([k, d]) => h('div', { style: S.card, key: k },
-            h('code', { style: S.code }, k), ' ', h('span', { style: S.d }, d))),
-          h('div', { style: S.groupLabel }, T.limitsTitle),
-          T.limits.map((text, index) => h('div', { style: S.li, key: index },
-            h('span', { style: S.bullet }, '·'), text))));
-    });
+    /** 别名：设置区语义上是"重内容懒挂载"，与说明区共用实现。 */
+    const LazyFold = Fold;
+
+    function Caret() {
+      return h('svg', {
+        className: 'wai-caret',
+        width: 10, height: 10, viewBox: '0 0 10 10',
+        fill: 'none', xmlns: 'http://www.w3.org/2000/svg',
+        'aria-hidden': 'true',
+      }, h('path', {
+        d: 'M3 1.5 6.6 5 3 8.5',
+        stroke: 'currentColor', strokeWidth: 1.4,
+        strokeLinecap: 'round', strokeLinejoin: 'round',
+      }));
+    }
 
     const SETTINGS_FIELDS = [
       { key: 'placement', group: 'ui', zh: '入口位置', en: 'Placement', kind: 'select', optKeys: ['sidebar', 'settings', 'both'] },
@@ -300,17 +496,13 @@ window.__ModuleLoader__.load({
       { key: 'maxAnswerChars', group: 'output', zh: '答案长度', en: 'Max answer chars', unit: '字', floorKey: null },
       { key: 'followUpChars', group: 'output', zh: '追问截断', en: 'Follow-up chars', unit: '字', floorKey: null },
       { key: 'systemPromptSection', group: 'output', zh: '注入提示片段', en: 'System prompt section', kind: 'bool' },
-      { key: 'webhookUrl', group: 'output', zh: 'Webhook URL', en: 'Webhook URL', kind: 'text', placeholder: 'https://…（空=关）' },
-      { key: 'hooksFile', group: 'output', zh: '钩子模块', en: 'Hooks module', kind: 'text', placeholder: 'C:\\…\\hooks.mjs（空=关）' },
+      { key: 'webhookUrl', group: 'output', zh: 'Webhook URL', en: 'Webhook URL', kind: 'text', placeholder: 'https://…（留空=关闭）' },
+      { key: 'hooksFile', group: 'output', zh: '钩子模块', en: 'Hooks module', kind: 'text', placeholder: 'C:\\path\\hooks.mjs（留空=关闭）' },
     ];
 
     // 模块级缓存：折叠再展开不重新 fetch；保存/重置后失效。
-    let formCache = null; // { editable, floor, settings, effective }
+    let formCache = null;
 
-    /**
-     * 设置表单。挂载即 fetch（有缓存则秒开）；全部输入非受控；
-     * 保存时收集相对 effective 有变化的字段 POST。
-     */
     function SettingsForm() {
       const [phase, setPhase] = React.useState(formCache ? 'ready' : 'loading');
       const [data, setData] = React.useState(formCache);
@@ -363,7 +555,8 @@ window.__ModuleLoader__.load({
           } else if (f.kind === 'select') {
             if (node.value !== (effective[f.key] ?? '')) out[f.key] = node.value;
           } else if (f.kind === 'text') {
-            if (node.value.trim() !== (effective[f.key] ?? '')) out[f.key] = node.value.trim();
+            const v = node.value.trim();
+            if (v !== (effective[f.key] ?? '')) out[f.key] = v;
           } else {
             const n = Number(node.value);
             if (Number.isFinite(n) && Math.trunc(n) !== effective[f.key]) out[f.key] = Math.trunc(n);
@@ -391,7 +584,6 @@ window.__ModuleLoader__.load({
             formCache = null;
             setSaveState({ phase: 'ok', message: T.settingsSaved });
             load(true);
-            // 位置类字段（placement/composerDock）变了：让 apply 重读并挪动入口
             if (payload.placement !== undefined || payload.composerDock !== undefined) {
               try { if (uiReload) uiReload(); } catch (e) { /* ignore */ }
             }
@@ -412,81 +604,99 @@ window.__ModuleLoader__.load({
             formCache = null;
             setSaveState({ phase: 'idle', message: null });
             load(true);
+            try { if (uiReload) uiReload(); } catch (e) { /* ignore */ }
           })
           .catch((e) => setSaveState({ phase: 'error', message: String((e && e.message) || e) }));
       };
 
-      if (phase === 'loading') return h('div', { style: S.d }, T.settingsLoading);
+      if (phase === 'loading') return h('div', { className: 'wai-muted' }, T.settingsLoading);
+
       if (phase === 'error') {
-        return h('div', { style: S.note },
-          T.settingsLoadFail + String(error),
-          h('div', { style: { ...S.row, marginTop: 8 } },
-            h('button', { style: S.button, onClick: () => load(true) }, T.settingsRetry)));
+        return h('div', null,
+          h('div', { className: 'wai-status wai-status-error' }, T.settingsLoadFail + '：' + String(error)),
+          h('div', { className: 'wai-actions' },
+            h('button', { className: 'wai-btn', onClick: () => load(true) }, T.settingsRetry)));
       }
 
       const groups = [['ui', T.groupUi], ['guard', T.groupGuard], ['judge', T.groupJudge], ['output', T.groupOutput]];
       const bindRef = (key) => (node) => { refs.current[key] = node; };
+      const zh = isZh();
+
       return h('div', null,
-        h('div', { style: S.d, marginBottom: 8 }, T.settingsHint),
+        h('div', { className: 'wai-muted' }, T.settingsHint),
         groups.map(([gk, label]) => {
           const fields = SETTINGS_FIELDS.filter((f) => f.group === gk);
           if (fields.length === 0) return null;
           return h('div', { key: gk },
-            h('div', { style: S.groupLabel }, label),
-            gk === 'ui' ? h('div', { style: { ...S.d, fontSize: 11, marginBottom: 6 } }, T.placementNote) : null,
+            h('div', { className: 'wai-section-label' }, label),
+            gk === 'ui' ? h('div', { className: 'wai-muted', style: { marginBottom: 4 } }, T.placementNote) : null,
             fields.map((f) => {
               const v = effective[f.key];
               if (f.kind === 'bool') {
-                return h('div', { style: S.fieldRow, key: f.key },
-                  h('label', { style: { display: 'inline-flex', alignItems: 'center', gap: 6 } },
+                return h('div', { className: 'wai-field', key: f.key },
+                  h('span', { className: 'wai-field-label' }, zh ? f.zh : f.en),
+                  h('label', { className: 'wai-check' },
                     h('input', { type: 'checkbox', defaultChecked: v === true, ref: bindRef(f.key) }),
-                    h('span', null, isZh() ? f.zh : f.en)),
-                  h('span', null), h('span', null));
+                    h('span', { className: 'wai-field-hint' }, v === true ? 'on' : 'off')));
               }
               if (f.kind === 'select') {
-                return h('div', { style: S.fieldRow, key: f.key },
-                  h('span', { style: { fontSize: 11.5, opacity: 0.9 } }, isZh() ? f.zh : f.en),
+                return h('div', { className: 'wai-field', key: f.key },
+                  h('span', { className: 'wai-field-label' }, zh ? f.zh : f.en),
                   h('select', {
-                    style: { ...S.input, gridColumn: 'span 2' },
+                    className: 'wai-input',
                     defaultValue: v ?? 'sidebar',
                     ref: bindRef(f.key),
                   }, f.optKeys.map((opt) => h('option', { key: opt, value: opt },
                     (T.placementOpts && T.placementOpts[opt]) || opt))),
                   h('span', null));
               }
-              const isText = f.kind === 'text';
+              if (f.kind === 'text') {
+                return h('div', { className: 'wai-field', key: f.key },
+                  h('span', { className: 'wai-field-label' }, zh ? f.zh : f.en),
+                  h('input', {
+                    className: 'wai-input wai-input-wide',
+                    type: 'text',
+                    defaultValue: v ?? '',
+                    placeholder: f.placeholder || '',
+                    ref: bindRef(f.key),
+                  }));
+              }
               const floorHint = f.floorKey && floor[f.floorKey] !== undefined
                 ? T.settingsFloor + ' ' + floor[f.floorKey] : '';
-              return h('div', { style: S.fieldRow, key: f.key },
-                h('span', { style: { fontSize: 11.5, opacity: 0.9 } }, isZh() ? f.zh : f.en),
-                isText
-                  ? h('input', {
-                    type: 'text', style: { ...S.input, gridColumn: 'span 2' },
-                    defaultValue: v ?? '', placeholder: f.placeholder || '',
-                    ref: bindRef(f.key),
-                  })
-                  : h('input', {
-                    type: 'number', style: S.input, min: 0, step: 1,
-                    defaultValue: v ?? '',
-                    ref: bindRef(f.key),
-                  }),
-                isText ? null : h('span', { style: S.floorTag }, floorHint || (f.unit || '')));
+              return h('div', { className: 'wai-field', key: f.key },
+                h('span', { className: 'wai-field-label' }, zh ? f.zh : f.en),
+                h('input', {
+                  className: 'wai-input',
+                  type: 'number',
+                  min: 0,
+                  step: 1,
+                  defaultValue: v ?? '',
+                  ref: bindRef(f.key),
+                }),
+                h('span', { className: 'wai-field-hint' }, floorHint || f.unit || ''));
             }));
         }),
-        // 文本字段第二行占满（上面 grid 已给 span 2 的变体）——webhook/hooks 用单独块渲染更稳
-        h('div', { style: S.row, marginTop: 10 },
+        h('div', { className: 'wai-actions' },
           h('button', {
-            style: S.button,
+            className: 'wai-btn wai-btn-primary',
             disabled: saveState.phase === 'saving',
             onClick: submit,
           }, saveState.phase === 'saving' ? T.settingsSaving : T.settingsSave),
-          h('button', { style: S.button, onClick: () => load(true), disabled: saveState.phase === 'saving' }, T.settingsReload),
-          h('button', { style: S.button, onClick: restore, disabled: saveState.phase === 'saving' }, T.settingsRestore)),
+          h('button', {
+            className: 'wai-btn',
+            onClick: () => load(true),
+            disabled: saveState.phase === 'saving',
+          }, T.settingsReload),
+          h('button', {
+            className: 'wai-btn',
+            onClick: restore,
+            disabled: saveState.phase === 'saving',
+          }, T.settingsRestore)),
         saveState.phase === 'ok'
-          ? h('div', { style: { ...S.d, color: 'var(--dsw-alias-state-success, #2f9e44)', marginTop: 6 } }, String(saveState.message))
+          ? h('div', { className: 'wai-status wai-status-ok' }, String(saveState.message))
           : null,
         saveState.phase === 'error'
-          ? h('div', { style: { ...S.d, color: 'var(--dsw-alias-state-error, #d64545)', marginTop: 6, whiteSpace: 'pre-wrap' } }, T.settingsFail + String(saveState.message))
+          ? h('div', { className: 'wai-status wai-status-error' }, T.settingsFail + '：' + String(saveState.message))
           : null);
     }
 
@@ -528,16 +738,16 @@ window.__ModuleLoader__.load({
       return 'default';
     }
 
-    const codeColor = (code) => {
+    const codeTone = (code) => {
       switch (code) {
-        case 'ok': return 'var(--dsw-alias-state-success, #2f9e44)';
+        case 'ok': return 'var(--dsw-alias-state-success, #128a4a)';
         case 'busy':
-        case 'rate_limited': return 'var(--dsw-alias-state-warning, #e8930c)';
+        case 'rate_limited': return 'var(--dsw-alias-state-warning, #a35c00)';
         case 'unauthorized':
         case 'unavailable':
         case 'timeout':
-        case 'failed': return 'var(--dsw-alias-state-error, #d64545)';
-        default: return 'var(--dsw-alias-text-secondary, #8a8a8a)';
+        case 'failed': return 'var(--dsw-alias-state-error, #c0392b)';
+        default: return 'var(--dsw-alias-text-secondary, #6b6b6b)';
       }
     };
 
@@ -555,7 +765,7 @@ window.__ModuleLoader__.load({
       return parsed;
     }
     function extractValueUncached(block) {
-      const direct = [block.value, block.result?.value, block.result, block.output?.value, block.output];
+      const direct = [block.value, block.result && block.result.value, block.result, block.output && block.output.value, block.output];
       for (const candidate of direct) {
         if (candidate && typeof candidate === 'object' && 'code' in candidate) return candidate;
       }
@@ -579,12 +789,11 @@ window.__ModuleLoader__.load({
       const value = extractValue(block);
       const code = (value && value.code) || (block && block.isError ? 'failed' : null);
       const answer = value && value.answer;
+      const pending = phase === 'preparing' || phase === 'start';
 
       React.useEffect(() => {
         const valueKey = value && typeof value.sessionKey === 'string' ? value.sessionKey : null;
-        const key = valueKey
-          || pickSessionKey(props && (props.sessionId || props.sessionKey))
-          || 'default';
+        const key = valueKey || pickSessionKey(props && (props.sessionId || props.sessionKey)) || 'default';
         if (autoOpened.has(key)) return;
         if (Date.now() - lastAutoOpenAt < AUTO_OPEN_COOLDOWN_MS) {
           autoOpened.add(key);
@@ -597,51 +806,98 @@ window.__ModuleLoader__.load({
         } catch (e) { /* 面板未注册时静默 */ }
       }, []);
 
-      const head = h('div', { style: S.row },
-        h('div', { style: S.k }, 'DeepSeek 讨论'),
+      const [copied, setCopied] = React.useState(false);
+      const copyAnswer = () => {
+        try {
+          Promise.resolve(navigator.clipboard.writeText(String(answer)))
+            .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1600); })
+            .catch(() => {});
+        } catch (e) { /* ignore */ }
+      };
+
+      const head = h('div', { className: 'wai-card-head' },
+        h('span', { className: 'wai-card-title' }, T.panel),
         code ? h('span', {
-          style: { ...S.code, color: codeColor(code), border: '1px solid currentColor', padding: '0 5px' },
+          className: 'wai-badge',
+          style: { color: codeTone(code) },
         }, code) : null,
-        phase === 'preparing' || phase === 'start'
-          ? h('span', { style: S.d }, '进行中…')
+        pending ? h('span', { className: 'wai-muted' }, '进行中…') : null,
+        value && value.elapsedMs
+          ? h('span', { className: 'wai-field-hint' }, (value.elapsedMs / 1000).toFixed(1) + 's')
+          : null,
+        value && value.discussionId
+          ? h('span', {
+            className: 'wai-field-hint',
+            style: { marginLeft: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' },
+            title: 'discussionId（可传给 followUp 追问）',
+          }, String(value.discussionId))
+          : null,
+        answer
+          ? h('button', {
+            className: 'wai-btn',
+            style: { minHeight: 24, padding: '2px 8px', fontSize: 12, marginLeft: value && value.discussionId ? 0 : 'auto' },
+            onClick: copyAnswer,
+            title: '复制回答原文',
+          }, copied ? T.copied : T.copyAnswer)
           : null);
 
       if (!answer) {
         const reason = (value && value.reason) || (block && block.error && block.error.code) || null;
         const message = (value && value.message) || (block && block.error && block.error.message) || null;
         const partial = value && value.partial ? String(value.partial) : null;
-        return h('div', { style: S.card }, head,
-          reason ? h('div', { style: S.d }, 'reason: ' + reason) : null,
-          message ? h('div', { style: S.d }, String(message)) : null,
-          partial ? h('div', { style: { ...S.d, whiteSpace: 'pre-wrap', marginTop: 6 } }, partial) : null);
+        return h('div', { className: 'wai-card' }, head,
+          reason ? h('div', { className: 'wai-muted', style: { marginTop: 6 } }, 'reason: ' + reason) : null,
+          message ? h('div', { className: 'wai-muted' }, String(message)) : null,
+          partial ? h('div', { className: 'wai-card-body' }, partial) : null,
+          !pending && !reason && !message && !partial
+            ? h('div', { className: 'wai-muted', style: { marginTop: 6 } }, T.empty) : null);
       }
-      return h('div', { style: S.card }, head,
-        h('div', {
-          style: { marginTop: 6, whiteSpace: 'pre-wrap', fontSize: 12.5, maxHeight: 320, overflowY: 'auto' },
-        }, String(answer)));
+      return h('div', { className: 'wai-card' }, head,
+        h('div', { className: 'wai-card-body' }, String(answer)));
     });
 
-    function Panel() {
+    /** 面板内容（不含外层滚动容器），设置页分区复用它。 */
+    function PanelContent() {
       const [copied, setCopied] = React.useState(false);
-      return h('div', { style: S.root },
-        h('div', { style: S.h1 }, T.title),
-        h('div', { style: S.sub }, `${TOOL_DISCUSS} · ${TOOL_READ} · ${TOOL_STATUS} · build ${CLIENT_BUILD}`),
-        h(StaticInfo, { copied, onCopied: () => setCopied((c) => !c) }),
+      const copy = () => {
+        try {
+          Promise.resolve(navigator.clipboard.writeText(`${T.template}<你的问题>`))
+            .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1600); })
+            .catch(() => {});
+        } catch (e) { /* ignore */ }
+      };
+      return h('div', { className: 'wai-wrap' },
+        h('div', { className: 'wai-head' },
+          h('h1', { className: 'wai-h1' }, T.title),
+          h('span', { className: 'wai-sub' }, `build ${CLIENT_BUILD}`)),
+        h('p', { className: 'wai-lead' }, T.lead),
+        h('div', { className: 'wai-note' }, T.when),
+        h('div', { className: 'wai-actions' },
+          h('button', { className: 'wai-btn', onClick: copy }, copied ? T.copied : T.copy)),
+        h(Fold, { title: T.usageTitle },
+          h('div', { className: 'wai-muted' }, T.store),
+          h('div', { className: 'wai-section-label' }, T.guardTitle),
+          h('div', null, T.guards.map(([k, d]) => h('div', { className: 'wai-row', key: k },
+            h('span', { className: 'wai-row-k' }, k),
+            h('span', { className: 'wai-row-d' }, d)))),
+          h('div', { className: 'wai-section-label' }, T.codesTitle),
+          h('div', null, T.codes.map(([k, d]) => h('div', { className: 'wai-row', key: k },
+            h('span', { className: 'wai-row-k' }, h('code', { className: 'wai-code' }, k)),
+            h('span', { className: 'wai-row-d' }, d)))),
+          h('div', { className: 'wai-section-label' }, T.limitsTitle),
+          h('ul', { className: 'wai-list' }, T.limits.map((text, i) => h('li', { key: i }, text)))),
         h(LazyFold, { title: T.settingsTitle }, h(SettingsForm, {})));
     }
 
-    // apply 闭包里需要 ctx（selectPanel），所以组件在 apply 内注册时注入
-    let ctx = null;
-    // apply 里赋值的"重读显示位置并可能重挂入口"回调；SettingsForm 保存成功后调用
-    let uiReload = null;
+    function Panel() {
+      return h('div', { className: 'wai-root' }, h(PanelContent, {}));
+    }
 
     // ── 入口位置（placement / composerDock，可经设置表单修改）──
-    // 注册决策不能阻塞 apply，所以：先用上次缓存（localStorage）挂载 → GET /settings
-    // 回来后若位置变了，dispose 旧注入并按新位置重挂。settings:'sidebar'|'settings'|'both'。
-    const LS_KEY = '***';
+    const LS_KEY = 'dsh-web-ai-discuss:ui';
     function readCachedUi() {
       try {
-        const raw = globalThis.localStorage?.getItem(LS_KEY);
+        const raw = globalThis.localStorage && globalThis.localStorage.getItem(LS_KEY);
         const v = raw ? JSON.parse(raw) : null;
         if (v && (v.placement === 'sidebar' || v.placement === 'settings' || v.placement === 'both')) {
           return { placement: v.placement, composerDock: v.composerDock === true };
@@ -650,22 +906,31 @@ window.__ModuleLoader__.load({
       return { placement: 'sidebar', composerDock: false };
     }
     function writeCachedUi(v) {
-      try { globalThis.localStorage?.setItem(LS_KEY, JSON.stringify(v)); } catch (e) { /* ignore */ }
+      try {
+        if (globalThis.localStorage) globalThis.localStorage.setItem(LS_KEY, JSON.stringify(v));
+      } catch (e) { /* ignore */ }
     }
 
     /** 输入框下方的小快捷入口（composerDock=true 且侧边栏存在时）。 */
     function ComposerChip() {
       return h('button', {
-        style: { ...S.button, fontSize: 11.5, padding: '3px 9px', opacity: 0.85 },
+        className: 'wai-btn',
+        style: { minHeight: 26, padding: '3px 10px', fontSize: 12 },
         title: T.panel,
         onClick: () => {
           try { ctx.layout.selectPanel(PANEL_ID); } catch (e) { /* ignore */ }
         },
-      }, '◈ ' + T.panel);
+      }, T.panel);
     }
+
+    // apply 闭包里需要 ctx（selectPanel）
+    let ctx = null;
+    // apply 里赋值的"重读显示位置并可能重挂入口"回调；SettingsForm 保存成功后调用
+    let uiReload = null;
 
     function apply(pluginCtx) {
       ctx = pluginCtx;
+      ensureStyles();
       let ui = readCachedUi();
       let disposers = [];
 
@@ -702,19 +967,17 @@ window.__ModuleLoader__.load({
           }
         }
         if (inSettings) {
-          // 设置页分区：同一 Panel 组件（自含说明 + 懒挂载设置表单）
           disposers.push(pluginCtx.slots.inject('settings.section', () => pluginCtx.slots.register({
             name: 'settings.section',
             id: PANEL_ID,
             order: 55,
             label: () => T.panel,
-          }, () => h('div', { style: { padding: '4px 2px 12px', maxWidth: 880 } }, h(Panel, {})))));
+          }, () => h('div', { className: 'wai-root', style: { height: 'auto' } }, h(PanelContent, {})))));
         }
       };
       mount();
 
-      // 拉一次生效配置，若位置变了就重挂（无需刷新页面即可挪动入口）。
-      // 不做轮询：SettingsForm 保存成功后通过 uiReload 回调即时通知这里。
+      // 拉一次生效配置，位置变了就重挂。不做轮询：SettingsForm 保存成功后经 uiReload 通知。
       if (typeof globalThis.fetch === 'function') {
         const load = () => {
           fetch(SETTINGS_API, { cache: 'no-store' })

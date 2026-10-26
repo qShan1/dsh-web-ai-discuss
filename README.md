@@ -94,6 +94,39 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
 
 下限写死在 `lib/config.js` 的 `FLOOR`，`resolveConfig` 只会向上钳制——**没有任何配置能把护栏关掉**。
 
+## 界面
+
+三处入口，位置可配（见下节 `placement`）：
+
+| 位置 | 内容 |
+|---|---|
+| 侧边栏格子 | 图标入口（气泡几何图形，选中态不降透明度），点了切到中央面板 |
+| 中央面板 `main` | 标题 + 构建戳 `build x.y.z`、定位说明、调用模板（一键复制）、`用法与说明`（三重护栏 / 返回码 / 已知限制）、`自定义设置` |
+| 会话工具卡片 | 每次 `web_ai_discuss` 的结果卡片：返回码徽章、耗时、`discussionId`（可直接传给 `followUp`）、回答原文、一键复制回答；失败态显示 `reason` / `message` / 半成品 `partial` |
+| 设置页分区 | `placement` 含 `settings` 时，在设置里占一页，内容与中央面板一致 |
+| 输入框下方 | `composerDock=true` 且 `placement` 含侧边栏时，输入框下方多一个快捷入口 |
+
+设计约束（与宿主共存，不抢戏）：
+
+- 只用 `--dsw-alias-*` 主题 token，亮暗两套都实测过对比度（正文 ≥4.5:1，最小字号 12px）；
+- 交互状态（hover / focus-visible / active / disabled / 选中 / 滚动条）由注入的命名空间 CSS `.wai-*` 承担，不覆盖宿主选择器；
+- 首屏零网络：两个折叠区都懒挂载，`自定义设置` 展开才 fetch 一次，`formCache` 之后秒开；
+- 输入框全部非受控，输入不触发 React 渲染；工具卡片 `React.memo` + `WeakMap` 缓存解析结果。
+
+> 看到面板头部的 `build` 戳 = 浏览器跑的是这版代码；看不到 = client 模块没装载（宿主重启后需 `Ctrl+R` 刷新页面，或插件被禁用）。
+
+### 离线视觉验收
+
+本机 GUI 需要进程内 launch token，截图通道不可用，因此提供两条不能骗人的验证路径：
+
+```bash
+node test/render.mjs     # 用真实组件函数渲染静态页到 out/panel*.html（含亮/暗、折叠/展开四种）
+node test/client.mjs     # 桩 React 加载真实 client.js：slot 注册、文案、渲染、位置切换 39 条断言
+```
+
+`out/panel-expanded.html` 可直接用浏览器打开看完整表单；`test/render.mjs` 里的序列化器保留 SVG 的
+`viewBox` / `width` / `height`，否则图标会按浏览器默认 300×150 撑开把布局撑坏（踩过）。
+
 ## 自定义设置（GUI 可编辑，保存即生效）
 
 侧边栏「DeepSeek 讨论」面板的**自定义设置**区可以直接改，不必碰文件；保存写入
