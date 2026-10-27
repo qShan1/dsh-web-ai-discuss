@@ -192,8 +192,28 @@ const STATUS_BODY = {
   storeStats: { discussions: 12 },
   recent: [{ id: 'd-20261027-131502-9a6b', title: '用一句话回答：8+8等于几？' }],
   presets: [
-    { id: 'review', title: '方案评审', hint: '挑出致命问题', template: '请审阅：\n{prompt}' },
-    { id: 'compare', title: '方案对比', hint: '按维度比较', template: '请对比：\n{prompt}' },
+    {
+      id: 'review',
+      title: '方案评审',
+      hint: '挑出致命问题',
+      defaultLevel: 'normal',
+      levels: [
+        { id: 'light', title: '轻', hint: '只说最致命的问题', template: '严格评审下面这份内容，只指出最致命的问题。\n\n{prompt}' },
+        { id: 'normal', title: '标准', hint: '默认强度', template: '严格评审下面这份内容，指出会致命的问题。\n\n{prompt}' },
+        { id: 'strict', title: '严', hint: '专找推翻它的问题', template: '以最挑剔的评审者审阅下面内容，专找会把它推翻的问题。\n\n{prompt}' },
+      ],
+    },
+    {
+      id: 'compare',
+      title: '方案对比',
+      hint: '按维度比较',
+      defaultLevel: 'normal',
+      levels: [
+        { id: 'light', title: '轻', hint: '只说最大差异', template: '对比下面几项，只说最大差异。\n\n{prompt}' },
+        { id: 'normal', title: '标准', hint: '默认强度', template: '按维度对比下面几项，给出取舍建议。\n\n{prompt}' },
+        { id: 'strict', title: '严', hint: '找出被忽略的权衡', template: '严格对比下面几项，找出被忽略的权衡与失败条件。\n\n{prompt}' },
+      ],
+    },
   ],
 };
 const SETTINGS_BODY = {
@@ -223,16 +243,17 @@ const flush = async () => {
   await new Promise((r) => setImmediate(r));
 };
 
-// ── 面板首屏（懒挂载语义）──
-// 折叠块（用法与说明 / 自定义设置）初始关闭：不渲染其 body，SettingsForm 不挂载、零 fetch。
-// hook 槽位约定（递归渲染下）：0=Panel copied，1=LazyFold(usage) open，2=LazyFold(settings) open。
-const toggleFolds = [];
-const walkCollectToggles = (node) => {
-  if (!node || typeof node !== 'object' || node === false) return;
-  if (Array.isArray(node)) { node.forEach(walkCollectToggles); return; }
-  if (typeof node.type === 'function') { walkCollectToggles(renderComponent(node)); return; }
-  if (node.props && typeof node.props.onToggle === 'function') toggleFolds.push(node.props.onToggle);
-  if (node.props) walkCollectToggles(node.props.children);
+// ── 面板首屏（Tab 分区 + 懒挂载语义）──
+// 侧边栏面板改成三个 Tab（概览/预设/设置）：首屏只渲染概览里的运行状态与说明折叠，
+// 预设区与设置表单都要切过去才挂载，避免窄栏一路往下翻。
+const collectByClass = (node, cls, out = []) => {
+  if (!node || typeof node !== 'object' || node === false) return out;
+  if (Array.isArray(node)) { node.forEach((n) => collectByClass(n, cls, out)); return out; }
+  if (typeof node.type === 'function') { collectByClass(renderComponent(node), cls, out); return out; }
+  const cn = node.props && node.props.className;
+  if (typeof cn === 'string' && cn.split(/\s+/).includes(cls)) out.push(node);
+  if (node.props) collectByClass(node.props.children, cls, out);
+  return out;
 };
 
 resetHooks();
@@ -240,46 +261,82 @@ effects.length = 0;
 const panelTree = mainSlot.component({});
 const panelText = textOf(panelTree);
 check('面板：含定位说明', panelText.includes('外部讨论通道'), panelText.slice(0, 60));
-check('面板：含构建戳 0.4.1', panelText.includes('build 0.4.1'), panelText.slice(0, 140));
-check('面板：含三个折叠标题', panelText.includes('用法与说明') && panelText.includes('预设提示词') && panelText.includes('自定义设置'), panelText.slice(0, 400));
-check('面板：折叠关闭时不渲染护栏/返回码明细',
-  !panelText.includes('rate_limited') && fetchCalls.length === 0, { fetches: fetchCalls.length });
-
-// 走一遍收集 Fold 的 onToggle（usage / preset / settings 三个）
-resetHooks();
-walkCollectToggles(mainSlot.component({}));
-check('Fold 暴露 onToggle（usage + preset + settings）', toggleFolds.length === 3, toggleFolds.length);
-for (const t of toggleFolds) t({ currentTarget: { open: true } });
-
-// 展开后：护栏/返回码/限制明细出现；SettingsForm 挂载并 GET
-resetHooks();
-effects.length = 0;
-const openedText1 = textOf(mainSlot.component({}));
-check('展开：说明区渲染三重护栏与返回码',
-  openedText1.includes('三重护栏') && openedText1.includes('rate_limited') && openedText1.includes('ego-browser'),
-  openedText1.slice(openedText1.indexOf('三重护栏'), openedText1.indexOf('三重护栏') + 80));
-await flush(); // SettingsForm 的 load effect → fetch → setState
-resetHooks();
-const panelText2 = textOf(mainSlot.component({}));
-check('设置区：展开后 GET 打到正确路由',
-  fetchCalls.some((f) => f.url === '/web-ai-discuss/api/settings'),
+check('面板：含构建戳 0.4.2', panelText.includes('build 0.4.2'), panelText.slice(0, 140));
+check('面板：含三个分区标签', panelText.includes('概览') && panelText.includes('预设') && panelText.includes('设置'), panelText.slice(0, 400));
+check('面板：首屏停在概览分区（不含设置字段）',
+  panelText.includes('运行状态') && !panelText.includes('窗口上限'), panelText.slice(0, 400));
+check('面板：首屏不渲染护栏/返回码明细',
+  !panelText.includes('rate_limited') && fetchCalls.length === 0, { fetches: fetchCalls.map((f) => f.url) });
+check('面板：首屏不挂载设置表单（未打 settings 路由）',
+  !fetchCalls.some((f) => f.url === '/web-ai-discuss/api/settings'),
   fetchCalls.map((f) => f.url));
+
+await flush(); // 概览分区 LiveStatus 的 load effect → fetch
 check('运行状态：GET 打到 /status 路由',
   fetchCalls.some((f) => f.url === '/web-ai-discuss/api/status'),
   fetchCalls.map((f) => f.url));
+resetHooks();
+const overviewText = textOf(mainSlot.component({}));
 check('运行状态：渲染用量/空间/记录三项',
-  panelText2.includes('窗口用量') && panelText2.includes('ego 空间') && panelText2.includes('讨论记录'),
-  panelText2.slice(panelText2.indexOf('运行状态'), panelText2.indexOf('运行状态') + 160));
-check('设置区：渲染分组标题（护栏/发送与判定/输出与扩展）',
-  panelText2.includes('发送与判定') && panelText2.includes('输出与扩展'),
-  panelText2.slice(panelText2.indexOf('自定义设置'), panelText2.indexOf('自定义设置') + 220));
-check('设置区：渲染字段与下限', panelText2.includes('窗口上限') && panelText2.includes('最小间隔') && panelText2.includes('下限 5000'));
-check('设置区：渲染保存/重新读取/恢复默认按钮', panelText2.includes('保存修改') && panelText2.includes('重新读取') && panelText2.includes('恢复默认'));
-check('预设区：展开后渲染预设条目与 id',
-  panelText2.includes('review') && panelText2.includes('compare')
-  && panelText2.includes('方案评审') && panelText2.includes('方案对比'),
-  panelText2.slice(panelText2.indexOf('预设提示词'), panelText2.indexOf('预设提示词') + 200));
-check('预设区：每条带复制模板按钮', panelText2.includes('复制模板'), panelText2.slice(-200));
+  overviewText.includes('窗口用量') && overviewText.includes('ego 空间') && overviewText.includes('讨论记录'),
+  overviewText.slice(overviewText.indexOf('运行状态'), overviewText.indexOf('运行状态') + 160));
+
+// 切到「设置」分区
+const clickTab = (label) => {
+  resetHooks();
+  const tabs = collectByClass(mainSlot.component({}), 'wai-tab');
+  const target = tabs.find((t) => textOf(t).includes(label));
+  if (!target || !target.props.onClick) return false;
+  target.props.onClick();
+  return true;
+};
+
+check('切到设置分区成功', clickTab('设置'));
+// 切分区后必须先渲染一次让 SettingsForm 挂载（useEffect 才会登记），再冲刷 effect
+resetHooks();
+textOf(mainSlot.component({}));
+await flush(); // SettingsForm 的 load effect → fetch → setState
+resetHooks();
+const settingsText = textOf(mainSlot.component({}));
+check('设置区：渲染分组标题（发送与判定/输出与扩展）',
+  settingsText.includes('发送与判定') && settingsText.includes('输出与扩展'),
+  settingsText.slice(settingsText.indexOf('自定义设置'), settingsText.indexOf('自定义设置') + 220));
+check('设置区：渲染字段与下限',
+  settingsText.includes('窗口上限') && settingsText.includes('最小间隔') && settingsText.includes('下限 5000'));
+check('设置区：渲染保存/重新读取/恢复默认按钮',
+  settingsText.includes('保存修改') && settingsText.includes('重新读取') && settingsText.includes('恢复默认'));
+check('设置区：GET 打到 /settings 路由',
+  fetchCalls.some((f) => f.url === '/web-ai-discuss/api/settings'),
+  fetchCalls.map((f) => f.url));
+
+// 切到「预设」分区
+check('切到预设分区成功', clickTab('预设'));
+resetHooks();
+textOf(mainSlot.component({}));
+await flush(); // PresetBlock 的 fetch → setState
+resetHooks();
+const presetText = textOf(mainSlot.component({}));
+check('预设区：渲染预设条目与 id',
+  presetText.includes('review') && presetText.includes('compare')
+  && presetText.includes('方案评审') && presetText.includes('方案对比'),
+  presetText.slice(presetText.indexOf('预设'), presetText.indexOf('预设') + 200));
+check('预设区：含档位分段控件（轻/标准/严）',
+  presetText.includes('轻') && presetText.includes('标准') && presetText.includes('严'), presetText.slice(0, 300));
+check('预设区：每条带「看模板」与「复制调用」',
+  presetText.includes('看模板') && presetText.includes('复制调用'), presetText.slice(-300));
+check('预设区：当前档位标在条目上（:normal）', presetText.includes(':normal'), presetText.slice(0, 400));
+
+// 展开某条预设的模板预览
+{
+  resetHooks();
+  const shows = collectByClass(mainSlot.component({}), 'wai-preset-action');
+  const btn = shows.flatMap((a) => (a.props && a.props.children ? [].concat(a.props.children) : []))
+    .find((b) => b && b.props && typeof b.props.onClick === 'function' && textOf(b).includes('看模板'));
+  if (btn) btn.props.onClick();
+  resetHooks();
+  const tmplText = textOf(mainSlot.component({}));
+  check('预设区：看模板后渲染模板预览', tmplText.includes('严格评审下面这份内容'), tmplText.slice(-400));
+}
 
 // 侧边栏图标
 const iconTree = side.component({ size: 20, active: true });

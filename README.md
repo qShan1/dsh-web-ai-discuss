@@ -53,7 +53,8 @@ plugin_manager({ action: 'install_bundle', target: '<绝对路径>/dsh-web-ai-di
 | 参数 | 类型 | 说明 |
 |---|---|---|
 | `prompt` | string，必填 | 完整提问，写清目标与期望产出 |
-| `preset` | string | 可选的**预设提示词** id（见下节），把你的提问套进固定回答结构；原始提问原样保留 |
+| `preset` | string | 可选的**预设提示词** id，可带档位：`review` 或 `review:strict`（见下节）；把你的提问套进固定回答结构；原始提问原样保留 |
+| `presetLevel` | string | 单独的档位参数（`light` / `normal` / `strict`），优先于 `preset` 里写的档位；与 `preset` 内档位冲突 → `preset_level_conflict` |
 | `topic` | string | 索引用短标题，省略取 prompt 前 48 字 |
 | `context` | string | 附在提问后的补充上下文 |
 | `newChat` | boolean | 默认 `true`（推荐）：先回新会话，气泡从零开始，发送/完成判定最可靠；显式 `false` 沿用当前网页会话 |
@@ -61,9 +62,9 @@ plugin_manager({ action: 'install_bundle', target: '<绝对路径>/dsh-web-ai-di
 | `attachments` | string[] | 要一并上传给网页版的附件**绝对路径**（最多 5 个） |
 | `timeoutMs` | integer | 30000–600000，默认取配置 |
 
-返回字段：`tool` `code` `reason` `message` `at` `sessionKey`，以及按分支出现的 `answer` `answerChars` `discussionId` `polls` `elapsedMs` `bubblesBefore` `bubblesAfter` `guardrails` `handoff` `retryAfterMs` `partial` `attachments` `preset`。
+返回字段：`tool` `code` `reason` `message` `at` `sessionKey`，以及按分支出现的 `answer` `answerChars` `discussionId` `polls` `elapsedMs` `bubblesBefore` `bubblesAfter` `guardrails` `handoff` `retryAfterMs` `partial` `attachments` `preset` `presetLevel`。
 
-### 预设提示词
+### 预设提示词与档位
 
 `preset` 给网页版 DeepSeek 一个**提问框架**：它只加回答结构，不改写你的提问——原始提问始终原样附在
 「待评审内容 / 待对比内容 / …」之后。8 条预设：
@@ -79,9 +80,21 @@ plugin_manager({ action: 'install_bundle', target: '<绝对路径>/dsh-web-ai-di
 | `diagnose` | 排障思路 | 候选原因与可能性 → 每因验证方法 → 排查顺序与最可能根因 |
 | `expand` | 拓展可能 | 非常规方向 → 最值得试的一条 → 共享的隐含前提 |
 
-- 传了不认识的 id → `code=invalid`，`reason=unknown_preset`，返回 `available`（合法 id 列表）；**不消耗讨论配额**
-- 落盘记录里 `prompt` 存的是**原始提问**、`preset` 存预设 id——检索与复盘看到的是你真正问的东西
-- 预设集是插件常量（`lib/presets.js`），不落盘、不进设置项；面板「预设提示词」折叠块可一键复制模板
+每条预设都有**三档强度**，同一套框架、不同狠度：
+
+| 档位 | 强度 | 模板长度 | 用途 |
+|---|---|---|---|
+| `light` | 轻 | 1–2 句（≤200 字符） | 只想要一个结论，别长篇大论 |
+| `normal` | 标准（默认） | 3–4 行 | 常规的评审 / 对比 / 拆解 |
+| `strict` | 严 | 4–5 行 | 要它专找会推翻结论的问题 |
+
+- 两种写法：`preset="review:strict"`（id 与档位写一起）或 `preset="review"` + `presetLevel="strict"`；
+  两者同时给且档位不一致 → `code=invalid`，`reason=preset_level_conflict`
+- 档位不认识 → `code=invalid`，`reason=unknown_preset_level`，返回 `available`
+- 预设 id 不认识 → `code=invalid`，`reason=unknown_preset`，返回 `available`；**两种校验都在护栏取票之前，不消耗讨论配额**
+- 模板长度是**硬约束**：轻档模板必须 ≤200 字符（`test/cases.mjs` 断言），避免把长指令塞进 token
+- 落盘记录里 `prompt` 存的是**原始提问**、`preset` 存预设 id、`presetLevel` 存档位——检索与复盘看到的是你真正问的东西
+- 预设集是插件常量（`lib/presets.js`），不落盘、不进设置项；面板「预设」分区可切换档位、一键复制模板或复制调用语句
 
 ### 附件上传
 
@@ -113,6 +126,8 @@ plugin_manager({ action: 'install_bundle', target: '<绝对路径>/dsh-web-ai-di
 - `unavailable` —— 本机找不到 ego-browser
 - `not_found` —— 讨论 id 不存在**或不合法**（id 必须匹配 `d-YYYYMMDD-HHMMSS-xxxx`，防止路径穿越）
 - `invalid` + `reason=unknown_preset` —— `preset` 传了不认识的 id
+- `invalid` + `reason=unknown_preset_level` —— 档位不认识
+- `invalid` + `reason=preset_level_conflict` —— `preset` 里写的档位与 `presetLevel` 打架
 
 ### 布尔参数容错
 
@@ -137,7 +152,10 @@ plugin_manager({ action: 'install_bundle', target: '<绝对路径>/dsh-web-ai-di
   "space": { "locked": false, "holder": null },
   "storeStats": { "discussions": 12 },
   "recent": [ { "id": "d-20261027-131502-9a6b", "title": "…", "createdAt": "…" } ],
-  "presets": [ { "id": "review", "title": "方案评审", "template": "…" } ],
+  "presets": [ { "id": "review", "title": "方案评审", "defaultLevel": "normal",
+                 "levels": [ { "id": "light", "title": "轻", "template": "…" },
+                             { "id": "normal", "title": "标准", "template": "…" },
+                             { "id": "strict", "title": "严", "template": "…" } ] } ],
   "effective": { "minGapMs": 7000, "placement": "sidebar", "…": "…" }
 }
 ```
@@ -166,10 +184,13 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
 | 位置 | 内容 |
 |---|---|
 | 侧边栏格子 | 图标入口（气泡几何图形，选中态不降透明度），点了切到中央面板 |
-| 中央面板 `main` | 标题 + 构建戳 `build x.y.z`、定位说明、**运行状态块**（窗口用量 / ego 空间 / 记录数 / 最近 5 条）、调用模板（一键复制）、`用法与说明`（三重护栏 / 返回码 / 已知限制）、`预设提示词`（8 条预设，可一键复制模板）、`自定义设置` |
+| 中央面板 `main` | 标题 + 构建戳 `build x.y.z`、定位说明、**三个分区 Tab**：<br>· **概览**：运行状态块（窗口用量 / ego 空间 / 记录数 / 总调用）、调用模板（一键复制）、`用法与说明`（三重护栏 / 返回码 / 已知限制）<br>· **预设**：档位分段控件（轻 / 标准 / 严）+ 8 条预设（可「看模板」「复制调用」）<br>· **设置**：自定义设置表单 |
 | 会话工具卡片 | 每次 `web_ai_discuss` 的结果卡片：返回码徽章、耗时、`discussionId`（可直接传给 `followUp`）、附件文件名、回答原文、一键复制回答；失败态显示 `reason` / `message` / 半成品 `partial` |
-| 设置页分区 | `placement` 含 `settings` 时，在设置里占一页，内容与中央面板一致 |
+| 设置页分区 | `placement` 含 `settings` 时，在设置里占一页；此处**不分区**（表单铺开，设置项必须一眼可见） |
 | 输入框下方 | `composerDock=true` 且 `placement` 含侧边栏时，输入框下方多一个快捷入口 |
+
+**为什么侧边栏用 Tab 而不是一路铺开**：宿主侧边栏只有 ~340px 宽，铺开会让人为了看一眼
+预设或设置一路往下翻（实测反馈）。改成三个分区后，首屏只留概览，窄栏里**每个分区都在一两屏内看完**。
 
 设计约束（与宿主共存，不抢戏）：
 
@@ -177,8 +198,9 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
   早期版本用的 `--dsw-alias-text-primary` / `bg-secondary` / `border-primary` / `accent` / `state-success` **在宿主里根本不存在**（`dsh-client-ui-theme` 只定义 `label-*` / `bg-layer-*` / `border-l*` / `state-*-primary`），导致面板完全不继承宿主主题；
 - 亮/暗两套主题都做过实测，`impeccable detect` 对渲染产物 **0 告警**（正文对比度 ≥4.5:1，最小字号 11.5px 仅用于等宽 id / 数字）；
 - **窄栏用容器查询而非媒体查询**：宿主面板按容器宽度布局（侧边栏 340px 也能用），`@container wai (max-width: 460px)` 负责单列化，媒体查询在宿主里不生效；
+  窄栏下指标网格固定两列（避免 3+1 的孤儿列）、档位说明另起一行；
 - 交互状态（hover / focus-visible / active / disabled / 选中 / 滚动条 / 选区）由注入的命名空间 CSS `.wai-*` 承担，不覆盖宿主选择器；
-- 首屏零网络：三个折叠区都懒挂载，`自定义设置` 展开才 fetch 一次，`formCache` 之后秒开；
+- 首屏零额外网络：概览只读一次 `/status`，预设与设置分区**切过去才挂载并 fetch**；
 - 输入框全部非受控，输入不触发 React 渲染；工具卡片 `React.memo` + `WeakMap` 缓存解析结果。
 
 > 看到面板头部的 `build` 戳 = 浏览器跑的是这版代码；看不到 = client 模块没装载（宿主重启后需 `Ctrl+R` 刷新页面，或插件被禁用）。
@@ -222,13 +244,16 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
 本机 GUI 需要进程内 launch token，宿主内截图通道不可用；但本机有 Chrome，可以对离线渲染产物做**真实光栅截图**：
 
 ```bash
-node test/render.mjs     # 用真实组件函数渲染静态页到 out/panel*.html（含亮/暗、折叠/展开四种）
-node test/client.mjs     # 桩 React 加载真实 client.js：slot 注册、文案、渲染、位置切换 44 条断言
+node test/render.mjs     # 用真实组件函数渲染静态页到 out/panel*.html（亮/暗 × 概览/展开/预设/设置 六种）
+node test/client.mjs     # 桩 React 加载真实 client.js：slot 注册、文案、渲染、Tab 切换、位置切换 49 条断言
 
 # 真截图（headless Chrome）
-chrome --headless=new --disable-gpu --hide-scrollbars --window-size=1600,1400 \
-  --screenshot=out/shot.png "file:///<abs>/out/panel-expanded.html"
+chrome --headless=new --no-sandbox --disable-gpu --hide-scrollbars \
+  --user-data-dir="$TEMP/wai-chrome" --window-size=1600,1500 \
+  --screenshot="$TEMP/wai-panel.png" "file:///<abs>/out/panel-expanded.html"
 ```
+
+> 截图必须带 `--no-sandbox` 与独立 `--user-data-dir`，否则 Chrome 在受限目录下写 png 会「拒绝访问」。
 
 `test/render.mjs` 里的页面变量使用**宿主 `dsh-client-ui-theme` 的真实令牌值**（亮暗各一套），
 截图因此与宿主真实观感一致，而不是"插件自己的一套假主题"。
@@ -238,7 +263,9 @@ chrome --headless=new --disable-gpu --hide-scrollbars --window-size=1600,1400 \
 - 序列化器保留 SVG 的 `viewBox` / `width` / `height`，否则图标按浏览器默认 300×150 撑开把布局撑坏；
 - 序列化器**不能丢弃 `style`**，否则徽章状态色等内联样式在截图里全部丢失（一度让 `ok` 徽标显示成默认色）；
 - `open` 属性要单独处理（`details` 折叠块），只改 React state 不会在静态页里展开——否则"展开态"截图其实一直是关着的；
-- 页面容器要按内容高度渲染（不能写死 900px），否则展开态底部被裁掉、看不到预设区与设置表单。
+- 页面容器要按内容高度渲染（不能写死 900px），否则展开态底部被裁掉、看不到预设区与设置表单；
+- 渲染某个 Tab 分区要直接改 `Tabs` 组件实例的 `useState` 槽位（`inst.slots[0]`），
+  只改 React state 的话静态页永远停在第一个分区。
 
 ## 自定义设置（GUI 可编辑，保存即生效）
 
@@ -270,13 +297,13 @@ HTTP 契约（同源守卫，exact 路由 `/web-ai-discuss/api/settings`）：
 
 ## 编排步骤（`web_ai_discuss`）
 
-1. 护栏取票（busy / 间隔 / 配额）；`followUp` 先折历史问答进 context；`preset` 校验（未知 id → `invalid`，**在取票之前**）；附件路径校验（**也在取票之前**）
+1. 护栏取票（busy / 间隔 / 配额）；`followUp` 先折历史问答进 context；`preset` 校验（未知 id / 未知档位 / 档位冲突 → `invalid`，**在取票之前**）；附件路径校验（**也在取票之前**）
 2. 定位 ego 可执行文件
 3. 生成 ego 脚本：`taskSpace('dsh-web-ai-discuss')` → 取/建页面 → 必要时 `goto`，若 `newChat=true` 再显式点「开启新对话」（DeepSeek 会把首页重定向到上次会话，不点就还是旧会话）→ 等输入框
 4. 读页面状态：输入框存在？被禁用？有登录弹窗？已有几个回答气泡？
 5. 未登录 → `task.handOff()` → 返回 `unauthorized`
 6. **上传附件**（可选）：`setInputFiles('input[type=file]', [...])` → 等附件 chip 出现（文件名进入正文）才算完成
-7. **套预设框架**（可选）：`preset.template` 里的 `{prompt}` 替换成你的原始提问（+ context），只加结构不改写提问
+7. **套预设框架**（可选）：按 `preset` + 档位取对应模板，模板里的 `{prompt}` 替换成你的原始提问（+ context），只加结构不改写提问
 8. **滚动到底**（真正的聊天滚动容器是 `div[class*="ds-virtual-list--printable"]`，虚拟列表只有贴底才渲染新消息）→ 填入（`fill` → evaluate 原生 setter → `keyboard.paste` 三级兜底）
 9. **发送强确认**：Enter 后按「用户消息数上涨」判定送达（输入框清空不代表送达，偶发被吞），1.8s 未确认→点发送按钮 / 重新填入，最多 3 次；仍未确认 → 快速返回 `failed/send_failed`（不白等超时）
 10. 轮询：每次采样前恢复贴底（生成期重渲染会破坏贴底状态），判据 = 用户消息数 > baseline 且最后一条 `div[class*="assistant-message-main-content"]`（**排除** `ds-think-content` 思考块）文本连续 `stableSamples` 次相同
@@ -298,14 +325,15 @@ HTTP 契约（同源守卫，exact 路由 `/web-ai-discuss/api/settings`）：
 ## 测试
 
 ```bash
-node test/cases.mjs    # 宿主侧契约与护栏，20/20
-node test/client.mjs   # 客户端注册与渲染（桩 React），44/44
+node test/cases.mjs    # 宿主侧契约与护栏，24/24
+node test/client.mjs   # 客户端注册与渲染（桩 React），49/49
 node test/styles.mjs   # 样式注入回归（过期 <style> 必须被替换），10/10
-node test/render.mjs   # 离线渲染 out/panel*.html（亮/暗 × 折叠/展开）
+node test/render.mjs   # 离线渲染 out/panel*.html（亮/暗 × 概览/展开/预设/设置）
 node test/smoke.mjs status|probe|read|discuss "问题"   # 真实 ego 冒烟
+node test/smoke.mjs preset review:strict "问题"        # 预设 + 档位的真实冒烟
 ```
 
-`test/cases.mjs` 用「把 egoPath 换成 node.exe + 一个名为 `nodejs` 的替身文件」的办法，让真实 `registerTools` 拿到可控的 ego 返回值，从而覆盖 unavailable / unauthorized / busy / rate_limited / timeout / failed 全部分支。覆盖的边界还有：路径穿越 id、ego 空间互斥、布尔字符串容错、附件路径校验（且校验失败不消耗配额）、等待间隔期间被取消后护栏是否归位、preset 合法套用与非法 id 拦截（同样不消耗配额）。
+`test/cases.mjs` 用「把 egoPath 换成 node.exe + 一个名为 `nodejs` 的替身文件」的办法，让真实 `registerTools` 拿到可控的 ego 返回值，从而覆盖 unavailable / unauthorized / busy / rate_limited / timeout / failed 全部分支。覆盖的边界还有：路径穿越 id、ego 空间互斥、布尔字符串容错、附件路径校验（且校验失败不消耗配额）、等待间隔期间被取消后护栏是否归位、preset 合法套用与非法 id 拦截（同样不消耗配额）、preset 档位（`id:level` / `presetLevel` 覆盖 / 非法档位 / 档位冲突）。
 
 > 桩 React 按**组件实例**存状态（真实 React 的语义）。早期版本按全局 hook 序号存，导致折叠块展开后新挂载的组件串到别的组件的状态槽上——那是测试桩的保真度问题，不是插件缺陷。
 
@@ -325,6 +353,8 @@ node test/smoke.mjs status|probe|read|discuss "问题"   # 真实 ego 冒烟
 - **长会话连发同一问题的可靠性依赖 `newChat=true` 默认值**：`newChat=false` 沿用旧会话时，虚拟列表 + 重渲染抖动可能导致完成判定超时（发送本身已有多重确认兜底）；确需追问请配 `followUp`
 - `lib/hooks.js` 双出口（`webhookUrl` / `hooksFile`）是自定义扩展点：`discuss.ok` 事件推送 `{id,title,prompt,answer,elapsedMs,discussionId}`，钩子异常只进 `notify` 不影响返回码
 - 预设提示词是**提问框架**，不是答案模板：框架给的是回答结构，结论仍由网页版模型给；预设集不可在设置页增删（避免配置面膨胀）
+- 预设档位只改**框架的严格程度与模板长度**，不改变回答结构的语义；轻档模板刻意压到 ≤200 字符，长问题本身另算 token
+- 侧边栏面板按**三个 Tab 分区**呈现；设置页分区不分区（铺开）。Tab 状态不落盘，刷新后回到「概览」
 - 面板配色依赖宿主 `dsh-client-ui-theme` 提供的 `--dsw-alias-*` 令牌；宿主换主题体系时需要同步改 `client.js` 里的 CSS 变量名（CSS 里都写了 fallback 值，不会白屏，但会失去主题跟随）
 - 宿主里的 `<style>` 常驻 DOM，样式必须**按内容比对后替换**而不是「存在就跳过」；否则插件升级后界面会停在旧版样式（已修 + `test/styles.mjs` 回归）
 - 宿主内没有通用的「截图」通道；`/web-ai-discuss/api/diag` 的 `probe` 段用临时探针节点量「规则是否生效」，是当前唯一能在宿主里验证样式落地的方式
@@ -341,10 +371,10 @@ dsh-web-ai-discuss/
   lib/script.js         # 生成 ego 脚本文本（probe/read/discuss，含附件上传段）
   lib/guard.js          # 三重护栏
   lib/mutex.js          # ego 空间互斥锁（discuss / live 读 / probe 共用同一页面）
-  lib/presets.js        # 预设提示词库（8 条提问框架，带 {prompt} 占位）
-  lib/store.js          # 讨论落盘与索引（id 白名单，防路径穿越；记录 attachments）
-  lib/tools.js          # 三个工具定义、返回码映射、附件路径校验、preset 套用
-  client.js             # 侧边栏图标 + 中央面板 + 运行状态块 + 预设块 + 工具卡片
+  lib/presets.js        # 预设提示词库（8 条提问框架 × 3 档强度，带 {prompt} 占位）
+  lib/store.js          # 讨论落盘与索引（id 白名单，防路径穿越；记录 attachments / presetLevel）
+  lib/tools.js          # 三个工具定义、返回码映射、附件路径校验、preset + 档位套用
+  client.js             # 侧边栏图标 + 中央面板（Tab 分区）+ 运行状态块 + 预设块 + 工具卡片
   locale/{zh,en}.json   # Plugin Manager 展示元数据
   icon.svg              # 原创图标
   test/                 # cases / client / styles / render / smoke

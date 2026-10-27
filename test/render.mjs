@@ -96,8 +96,26 @@ const STATUS_BODY = {
   ],
   effective: { placement: 'sidebar', composerDock: false },
   presets: [
-    { id: 'review', title: '方案评审', titleEn: 'Review', hint: '找出会让它失败的问题', hintEn: 'Find what would break it', template: '你是严格的评审者。\n\n{prompt}' },
-    { id: 'compare', title: '方案对比', titleEn: 'Compare', hint: '按维度对比多个方案', hintEn: 'Compare options by dimension', template: '你是客观的比较者。\n\n{prompt}' },
+    {
+      id: 'review', title: '方案评审', titleEn: 'Review',
+      hint: '找出会让它失败的问题', hintEn: 'Find what would break it',
+      defaultLevel: 'normal',
+      levels: [
+        { id: 'light', title: '轻', titleEn: 'Light', hint: '只说最致命的一个问题', template: '严格评审下面这份内容，只指出最致命的问题，不要鼓励。\n\n{prompt}' },
+        { id: 'normal', title: '标准', titleEn: 'Normal', hint: '按三段结构回答', template: '严格评审下面这份内容，指出会致命的问题，不要鼓励、不要复述。\n按「致命问题 / 重要问题 / 只改一处改哪里」回答。\n\n{prompt}' },
+        { id: 'strict', title: '严', titleEn: 'Strict', hint: '专找会推翻它的问题', template: '以最挑剔的评审者审阅下面内容，专找会把它推翻的问题；不确定就标为存疑。\n按「致命问题 / 重要问题 / 可商榷但可接受 / 只改一处改哪里」回答。\n\n{prompt}' },
+      ],
+    },
+    {
+      id: 'compare', title: '方案对比', titleEn: 'Compare',
+      hint: '按维度对比多个方案', hintEn: 'Compare options by dimension',
+      defaultLevel: 'normal',
+      levels: [
+        { id: 'light', title: '轻', titleEn: 'Light', hint: '只说最大差异', template: '对比下面几项，只说最大差异。\n\n{prompt}' },
+        { id: 'normal', title: '标准', titleEn: 'Normal', hint: '按维度给取舍建议', template: '按维度对比下面几项，给出取舍建议。\n\n{prompt}' },
+        { id: 'strict', title: '严', titleEn: 'Strict', hint: '找出被忽略的权衡', template: '严格对比下面几项，找出被忽略的权衡与失败条件。\n\n{prompt}' },
+      ],
+    },
   ],
 };
 globalThis.fetch = (url) => Promise.resolve({
@@ -178,7 +196,7 @@ function serialize(node) {
 const tick = () => new Promise((r) => setTimeout(r, 25));
 
 /** 渲染一次并跑完 effect（用于让设置表单从 loading 走到 ready）。 */
-async function renderStable(comp, props, { expanded }) {
+async function renderStable(comp, props, { expanded, tab }) {
   resetHooks();
   effects.length = 0;
   serialize(comp(props)); // 首帧：收集 effect，同时把组件实例建出来
@@ -187,6 +205,13 @@ async function renderStable(comp, props, { expanded }) {
     for (const [fn, rec] of instState) {
       if (fn.name !== 'Fold') continue;
       for (const inst of rec.instances) if (inst.slots.length) inst.slots[0] = true;
+    }
+  }
+  if (tab) {
+    // Tabs 的第一个 useState 就是当前分区：直接改槽位等价于用户点了那个 Tab
+    for (const [fn, rec] of instState) {
+      if (fn.name !== 'Tabs') continue;
+      for (const inst of rec.instances) if (inst.slots.length) inst.slots[0] = tab;
     }
   }
   const pending = effects.splice(0);
@@ -271,6 +296,8 @@ await mkdir(OUT, { recursive: true });
 
 const panelCollapsed = await renderStable(panelComp, {}, { expanded: false });
 const panelExpanded = await renderStable(panelComp, {}, { expanded: true });
+const panelPreset = await renderStable(panelComp, {}, { expanded: false, tab: 'preset' });
+const panelSettings = await renderStable(panelComp, {}, { expanded: false, tab: 'settings' });
 const cardOk = await renderStable(cardComp, { phase: 'result', block: cardOf(ENVELOPE), sessionId: 'demo' }, { expanded: false });
 const cardBusy = await renderStable(cardComp, {
   phase: 'result', sessionId: 'demo',
@@ -286,6 +313,8 @@ const variants = [
   ['panel-expanded', false, panelExpanded, null],
   ['panel-dark', true, panelCollapsed, null],
   ['panel-dark-expanded', true, panelExpanded, null],
+  ['panel-preset', false, panelPreset, null],
+  ['panel-settings', false, panelSettings, null],
 ];
 for (const [name, dark, panelHtml, _] of variants) {
   const side = `<div class="frame side"><div class="bar">会话卡片</div><div class="scroll">
@@ -296,4 +325,4 @@ for (const [name, dark, panelHtml, _] of variants) {
   const narrow = `<div class="frame narrow"><div class="bar">侧边栏 340px</div><div class="scroll">${panelHtml}</div></div>`;
   await writeFile(path.join(OUT, `${name}.html`), page({ dark, expanded: name.includes('expanded'), body: main + narrow + side }), 'utf8');
 }
-console.log('wrote out/panel.html, panel-expanded.html, panel-dark.html, panel-dark-expanded.html');
+console.log('wrote out/panel.html, panel-expanded.html, panel-dark.html, panel-dark-expanded.html, panel-preset.html, panel-settings.html');

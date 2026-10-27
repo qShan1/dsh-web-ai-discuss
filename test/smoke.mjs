@@ -25,13 +25,15 @@ import {
   saveDiscussion,
 } from '../lib/store.js';
 import { cleanAnswer, composePrompt } from '../lib/tools.js';
-import { applyPreset, findPreset, PRESET_IDS } from '../lib/presets.js';
+import { applyPreset, PRESET_IDS, resolvePreset } from '../lib/presets.js';
 import { readFile } from 'node:fs/promises';
 
 const cfg = resolveConfig({});
 const guard = new Guard(cfg);
 /** preset 子命令下实际使用的预设 id（落盘时记进记录）。 */
 let value_preset = null;
+/** preset 子命令下实际使用的档位。 */
+let value_presetLevel = null;
 
 async function readEgo(resultFile, out) {
   try {
@@ -71,17 +73,24 @@ if (cmd === 'status') {
   } else if (cmd === 'read') {
     script = buildReadScript({ resultFile, spaceName: cfg.spaceName, url: cfg.url, limit: 3 });
   } else if (cmd === 'discuss' || cmd === 'attach' || cmd === 'preset') {
-    // preset 的参数顺序是 <presetId> "<问题>"，与 discuss 的 "<问题>" 不同。
-    const presetId = cmd === 'preset' ? arg : null;
+    // preset 的参数顺序是 <presetId[:level]> "<问题>"，与 discuss 的 "<问题>" 不同。
+    const presetSpec = cmd === 'preset' ? arg : null;
     const rawPrompt = cmd === 'preset' ? (arg2 ?? '') : (arg ?? '');
-    const preset = presetId ? findPreset(presetId) : null;
-    if (presetId && !preset) {
-      console.error(JSON.stringify({ ok: false, reason: 'unknown_preset', available: PRESET_IDS }));
+    const resolved = presetSpec ? resolvePreset(presetSpec) : { ok: true, preset: null, level: null };
+    if (!resolved.ok) {
+      console.error(JSON.stringify({
+        ok: false,
+        reason: resolved.error,
+        available: resolved.available || PRESET_IDS,
+      }));
       process.exit(1);
     }
+    const preset = resolved.preset;
     // composePrompt 只负责拼 prompt + context；预设框架由 applyPreset 单独套上，
     // 与工具侧（lib/tools.js）保持同一路径。
-    const prompt = applyPreset(preset, composePrompt({ prompt: rawPrompt }));
+    const prompt = preset
+      ? applyPreset(preset, composePrompt({ prompt: rawPrompt }), resolved.level)
+      : composePrompt({ prompt: rawPrompt });
     if (!prompt) {
       console.error('usage: node test/smoke.mjs discuss "问题"');
       process.exit(1);
@@ -99,7 +108,7 @@ if (cmd === 'status') {
       sendTimeoutMs: cfg.sendTimeoutMs,
       attachments,
     });
-    if (cmd === 'preset') { value_preset = preset.id; }
+    if (cmd === 'preset') { value_preset = preset.id; value_presetLevel = resolved.level; }
   } else {
     console.error(`unknown command: ${cmd}`);
     process.exit(1);
@@ -127,6 +136,7 @@ if (cmd === 'status') {
       title: String(cmd === 'preset' ? arg2 : arg).slice(0, 48),
       prompt: cmd === 'preset' ? (arg2 ?? '') : (arg ?? ''),
       preset: value_preset,
+      presetLevel: value_presetLevel,
       answer: value.answer,
       url: value.url ?? null,
       createdAt: new Date().toISOString(),

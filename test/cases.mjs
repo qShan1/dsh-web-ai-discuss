@@ -413,10 +413,82 @@ const cases = [
       const ids = value.presets.map((p) => p.id);
       assert.ok(ids.includes('review') && ids.includes('counterexample'));
       for (const p of value.presets) {
-        assert.ok(p.template.includes('{prompt}'), `${p.id} 模板应含 {prompt} 占位`);
-        assert.equal((p.template.match(/\{prompt\}/g) || []).length, 1);
+        assert.ok(Array.isArray(p.levels) && p.levels.length === 3, `${p.id} 应有三档`);
+        assert.ok(p.levels.some((l) => l.id === 'light'));
+        assert.ok(p.levels.some((l) => l.id === 'normal'));
+        assert.ok(p.levels.some((l) => l.id === 'strict'));
+        for (const l of p.levels) {
+          assert.ok(l.template.includes('{prompt}'), `${p.id}/${l.id} 模板应含 {prompt} 占位`);
+          assert.equal((l.template.match(/\{prompt\}/g) || []).length, 1);
+          // 档位模板要短：轻档 ≤ 200 字符，避免把整段长指令塞进 token
+          if (l.id === 'light') {
+            assert.ok(l.template.length <= 220, `${p.id}/light 模板过长：${l.template.length}`);
+          }
+        }
       }
       return `presets=${value.presets.length}`;
+    } finally {
+      h.restore();
+    }
+  }),
+
+  record('preset 带档位 → 用该档模板，落盘记 presetLevel', async () => {
+    const h = await makeHarness({ mode: 'ok' });
+    try {
+      const discuss = h.tools.get('web_ai_discuss');
+      const value = await discuss.execute({ prompt: '这个缓存方案有问题吗', preset: 'review:strict' }, h.exec);
+      assert.equal(value.code, 'ok');
+      assert.equal(value.preset, 'review');
+      assert.equal(value.presetLevel, 'strict');
+      const stored = JSON.parse(await readFile(path.join(h.cfg.storeDir, `${value.discussionId}.json`), 'utf8'));
+      assert.equal(stored.preset, 'review');
+      assert.equal(stored.presetLevel, 'strict');
+      // 落盘的 prompt 仍是原始提问，不含框架
+      assert.equal(stored.prompt, '这个缓存方案有问题吗');
+      return 'review:strict';
+    } finally {
+      h.restore();
+    }
+  }),
+
+  record('presetLevel 单独传 → 覆盖预设默认档', async () => {
+    const h = await makeHarness({ mode: 'ok' });
+    try {
+      const discuss = h.tools.get('web_ai_discuss');
+      const value = await discuss.execute({ prompt: '砍到最小', preset: 'simplify', presetLevel: 'light' }, h.exec);
+      assert.equal(value.code, 'ok');
+      assert.equal(value.preset, 'simplify');
+      assert.equal(value.presetLevel, 'light');
+      return 'simplify/light';
+    } finally {
+      h.restore();
+    }
+  }),
+
+  record('档位非法 → invalid/unknown_preset_level，且不消耗配额', async () => {
+    const h = await makeHarness({ mode: 'ok' });
+    try {
+      const discuss = h.tools.get('web_ai_discuss');
+      const before = h.guard.snapshot().totalCalls;
+      const value = await discuss.execute({ prompt: '在吗', preset: 'review:nope' }, h.exec);
+      assert.equal(value.code, 'invalid');
+      assert.equal(value.reason, 'unknown_preset_level');
+      assert.ok(Array.isArray(value.available) && value.available.includes('strict'));
+      assert.equal(h.guard.snapshot().totalCalls, before, '校验失败不应计入配额');
+      return value.reason;
+    } finally {
+      h.restore();
+    }
+  }),
+
+  record('档位冲突（preset 里写了档位又传 presetLevel）→ invalid/preset_level_conflict', async () => {
+    const h = await makeHarness({ mode: 'ok' });
+    try {
+      const discuss = h.tools.get('web_ai_discuss');
+      const value = await discuss.execute({ prompt: '在吗', preset: 'review:strict', presetLevel: 'light' }, h.exec);
+      assert.equal(value.code, 'invalid');
+      assert.equal(value.reason, 'preset_level_conflict');
+      return value.reason;
     } finally {
       h.restore();
     }

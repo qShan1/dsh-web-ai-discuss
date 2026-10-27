@@ -1,5 +1,5 @@
 /**
- * dsh-web-ai-discuss — 客户端（浏览器侧）模块。v0.4.1（未发布开发版）
+ * dsh-web-ai-discuss — 客户端（浏览器侧）模块。v0.4.2（未发布开发版）
  *
  * 三块 UI：
  *   1. sidebar.panellist  侧边栏格子（图标）
@@ -29,7 +29,7 @@ window.__ModuleLoader__.load({
     const TOOL_DISCUSS = 'web_ai_discuss';
     const SETTINGS_API = '/web-ai-discuss/api/settings';
     // 构建戳：面板头部显示。看到它 = 浏览器在跑这版代码；看不到 = client 模块没装载。
-    const CLIENT_BUILD = '0.4.1';
+    const CLIENT_BUILD = '0.4.2';
 
     const isZh = () => {
       try {
@@ -110,10 +110,21 @@ window.__ModuleLoader__.load({
         liveBusyCount: '占用拒绝',
         liveRateCount: '限流拒绝',
         liveNever: '尚无记录',
+        liveRecent: '最近讨论',
+        liveRecentShow: '展开',
+        tabOverview: '概览',
+        tabPreset: '预设',
+        tabSettings: '设置',
+        levelTitle: '档位',
+        levelHint: '同一套框架三档强度，按这次要多狠来调',
         presetTitle: '预设提示词',
-        presetHint: '把提问套进固定回答结构，原始提问原样保留。调用 web_ai_discuss 时传 preset=<id>。',
+        presetHint: '把提问套进固定回答结构，原始提问原样保留。调用时传 preset=<id>（可加 :<档位>）。',
         presetCopy: '复制模板',
         presetCopied: '已复制',
+        presetCall: '复制调用',
+        presetCallCopied: '已复制调用',
+        presetShow: '看模板',
+        presetHide: '收起',
         presetFail: '读取预设失败（宿主路由未挂载？）',
         presetEmpty: '暂无可用预设',
       }
@@ -187,10 +198,21 @@ window.__ModuleLoader__.load({
         liveBusyCount: 'busy',
         liveRateCount: 'rate',
         liveNever: 'none yet',
+        liveRecent: 'Recent discussions',
+        liveRecentShow: 'Show',
+        tabOverview: 'Overview',
+        tabPreset: 'Presets',
+        tabSettings: 'Settings',
+        levelTitle: 'Level',
+        levelHint: 'Three strengths for the same framework; pick how hard to push',
         presetTitle: 'Preset prompts',
-        presetHint: 'Wrap your question in a fixed answer structure; the original question is kept verbatim. Pass preset=<id> when calling web_ai_discuss.',
+        presetHint: 'Wrap your question in a fixed answer structure; the original question is kept verbatim. Pass preset=<id> when calling web_ai_discuss, optionally with :<level>.',
         presetCopy: 'Copy template',
         presetCopied: 'Copied',
+        presetCall: 'Copy call',
+        presetCallCopied: 'Call copied',
+        presetShow: 'Template',
+        presetHide: 'Hide',
         presetFail: 'Failed to load presets (host route not mounted?)',
         presetEmpty: 'No presets available',
       };
@@ -213,6 +235,75 @@ window.__ModuleLoader__.load({
 }
 .wai-root * { box-sizing: border-box; }
 .wai-wrap { max-width: 68ch; }
+
+/* ── 分区切换（Tab）── */
+.wai-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 14px 0 0;
+  padding: 3px;
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: var(--wai-surface);
+  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.06));
+}
+.wai-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 28px;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.2;
+  border: 0;
+  border-radius: var(--dsw-radius-xs, 4px);
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary, #61666b);
+  background: transparent;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.wai-tab:hover { color: var(--dsw-alias-label-primary, #1a1a1a); }
+.wai-tab[data-active="true"] {
+  color: var(--dsw-alias-label-primary, #1a1a1a);
+  background: var(--wai-surface-strong);
+  font-weight: 600;
+}
+.wai-tab:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6);
+  outline-offset: 1px;
+}
+.wai-pane { margin-top: 16px; }
+
+/* ── 档位分段控件 ── */
+.wai-seg {
+  display: inline-flex;
+  overflow: hidden;
+  border-radius: var(--dsw-radius-sm, 8px);
+  border: 1px solid var(--dsw-alias-border-l3, rgba(0, 0, 0, 0.12));
+}
+.wai-seg-item {
+  min-height: 26px;
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  border: 0;
+  border-right: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary, #61666b);
+  background: transparent;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.wai-seg-item:last-child { border-right: 0; }
+.wai-seg-item:hover { color: var(--dsw-alias-label-primary, #1a1a1a); }
+.wai-seg-item[data-active="true"] {
+  color: var(--dsw-alias-label-primary, #1a1a1a);
+  background: var(--wai-surface-strong);
+  font-weight: 600;
+}
+.wai-seg-item:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6);
+  outline-offset: -2px;
+}
 
 /* ── 头部 ── */
 .wai-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -512,6 +603,8 @@ window.__ModuleLoader__.load({
   font-variant-numeric: tabular-nums;
 }
 .wai-live-list { margin: 8px 0 0; padding: 0; list-style: none; }
+.wai-live-recent { margin-top: 10px; }
+.wai-live-recent-toggle { min-height: 24px; padding: 2px 8px; font-size: 11.5px; }
 .wai-live-list li {
   display: flex;
   gap: 10px;
@@ -534,14 +627,30 @@ window.__ModuleLoader__.load({
 }
 
 /* ── 预设提示词 ── */
+.wai-level-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 4px;
+}
+.wai-level-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary, #61666b);
+}
+.wai-level-hint {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary, #61666b);
+}
 .wai-preset {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-rows: auto auto;
-  column-gap: 14px;
+  column-gap: 12px;
   row-gap: 2px;
-  align-items: start;
-  padding: 11px 0;
+  align-items: center;
+  padding: 9px 0;
   border-bottom: .5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
 }
 .wai-preset:last-child { border-bottom: 0; }
@@ -549,7 +658,7 @@ window.__ModuleLoader__.load({
   grid-column: 1;
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 7px;
   min-width: 0;
 }
 .wai-preset-id {
@@ -562,14 +671,43 @@ window.__ModuleLoader__.load({
   font-size: 13px;
   font-weight: 600;
   color: var(--dsw-alias-label-primary, #1a1a1a);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .wai-preset-hint {
-  grid-column: 1;
-  font-size: 12.5px;
-  line-height: 1.55;
+  grid-column: 1 / -1;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--dsw-alias-label-secondary, #61666b);
 }
-.wai-preset-action { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.wai-preset-action {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.wai-preset-more {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+}
+.wai-preset-tmpl {
+  margin: 6px 0 0;
+  padding: 9px 11px;
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: var(--wai-surface);
+  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.06));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary, #61666b);
+  max-height: 240px;
+  overflow-y: auto;
+}
 
 /* ── 结果卡片 ── */
 .wai-card {
@@ -663,8 +801,12 @@ window.__ModuleLoader__.load({
   .wai-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .wai-row-k { font-weight: 600; }
   .wai-preset { grid-template-columns: minmax(0, 1fr); }
-  .wai-preset-action { grid-column: 1; grid-row: auto; justify-self: start; margin-top: 8px; }
-  .wai-stats { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 10px 12px; }
+  .wai-preset-action { grid-column: 1; grid-row: auto; justify-self: start; margin-top: 6px; }
+  .wai-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+  .wai-tabs { margin-top: 12px; }
+  .wai-level-bar { gap: 8px; }
+  .wai-level-hint { flex: 1 1 100%; margin-top: -2px; }
+  .wai-seg-item { padding: 4px 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .wai-caret, .wai-btn, .wai-input, .wai-fold > summary { transition: none; }
@@ -1304,6 +1446,7 @@ window.__ModuleLoader__.load({
     /** 运行状态块：现读宿主 /web-ai-discuss/api/status（护栏与空间锁是运行时状态）。 */
     function LiveStatus() {
       const [state, setState] = React.useState({ loading: true, data: null, error: null });
+      const [showRecent, setShowRecent] = React.useState(false);
       const load = React.useCallback(() => {
         setState((s) => ({ ...s, loading: true }));
         fetch('/web-ai-discuss/api/status', { headers: { accept: 'application/json' } })
@@ -1387,17 +1530,31 @@ window.__ModuleLoader__.load({
           T.liveBusyCount + ' ' + (typeof g.rejectedBusy === 'number' ? g.rejectedBusy : 0)
           + ' · ' + T.liveRateCount + ' ' + (typeof g.rejectedRate === 'number' ? g.rejectedRate : 0)),
         recent.length
-          ? h('ul', { className: 'wai-live-list' },
-            recent.map((r) => h('li', { key: r.id },
-              h('span', { className: 'wai-live-id' }, String(r.id || '')),
-              h('span', { className: 'wai-live-title-txt', title: String(r.title || '') }, String(r.title || '')))))
+          ? h('div', { className: 'wai-live-recent' },
+            h('button', {
+              className: 'wai-btn wai-btn-ghost wai-live-recent-toggle',
+              onClick: () => setShowRecent((v) => !v),
+            }, T.liveRecent + ' (' + recent.length + ') ' + (showRecent ? '−' : '+')),
+            showRecent
+              ? h('ul', { className: 'wai-live-list' },
+                recent.map((r) => h('li', { key: r.id },
+                  h('span', { className: 'wai-live-id' }, String(r.id || '')),
+                  h('span', { className: 'wai-live-title-txt', title: String(r.title || '') }, String(r.title || '')))))
+              : null)
           : h('div', { className: 'wai-muted', style: { marginTop: 8 } }, T.liveNever));
     }
 
-    /** 预设提示词块：折叠展开时才挂载并读一次宿主路由（预设清单是插件常量，宿主侧提供）。 */
+    /**
+     * 预设提示词块：折叠展开时才挂载并读一次宿主路由（预设清单是插件常量，宿主侧提供）。
+     *
+     * 档位是全局的（一次只调一个强度），所以放在区块顶部做分段控件，
+     * 下面每条预设只显示当前档位的模板 —— 侧边栏里不用为每条预设再展开一次。
+     */
     function PresetBlock() {
       const [state, setState] = React.useState({ loading: true, items: [], error: null });
+      const [level, setLevel] = React.useState('normal');
       const [copiedId, setCopiedId] = React.useState(null);
+      const [openId, setOpenId] = React.useState(null);
       React.useEffect(() => {
         let alive = true;
         fetch('/web-ai-discuss/api/status', { headers: { accept: 'application/json' } })
@@ -1417,12 +1574,12 @@ window.__ModuleLoader__.load({
         return () => { alive = false; };
       }, []);
 
-      const copy = (item) => {
+      const copy = (item, text, label, setCopied) => {
         try {
-          Promise.resolve(navigator.clipboard.writeText(item.template))
+          Promise.resolve(navigator.clipboard.writeText(text))
             .then(() => {
-              setCopiedId(item.id);
-              setTimeout(() => setCopiedId((c) => (c === item.id ? null : c)), 1600);
+              setCopied(item.id);
+              setTimeout(() => setCopied((c) => (c === item.id ? null : c)), 1600);
             })
             .catch(() => {});
         } catch (e) { /* ignore */ }
@@ -1431,22 +1588,78 @@ window.__ModuleLoader__.load({
       if (state.error) return h('div', { className: 'wai-muted' }, T.presetFail + ' (' + state.error + ')');
       if (state.loading) return h('div', { className: 'wai-muted' }, T.liveLoading);
       if (!state.items.length) return h('div', { className: 'wai-muted' }, T.presetEmpty);
+
+      // 档位清单取自第一条预设的 levels（宿主侧统一提供），缺省退回三档内置。
+      const levels = (state.items[0] && Array.isArray(state.items[0].levels) && state.items[0].levels.length)
+        ? state.items[0].levels
+        : [{ id: 'light', title: '轻' }, { id: 'normal', title: '标准' }, { id: 'strict', title: '严' }];
+      const levelOf = (item) => (Array.isArray(item.levels) ? item.levels : [])
+        .find((l) => l.id === level) || null;
+
       return h('div', null,
+        h('div', { className: 'wai-level-bar' },
+          h('span', { className: 'wai-level-label' }, T.levelTitle),
+          h('div', { className: 'wai-seg', role: 'group', 'aria-label': T.levelTitle },
+            levels.map((l) => h('button', {
+              key: l.id,
+              className: 'wai-seg-item',
+              'data-active': l.id === level ? 'true' : 'false',
+              title: l.hint || '',
+              onClick: () => setLevel(l.id),
+            }, l.title))),
+          h('span', { className: 'wai-level-hint' }, T.levelHint)),
         h('div', { className: 'wai-muted', style: { marginBottom: 4 } }, T.presetHint),
-        h('div', null, state.items.map((item) => h('div', { className: 'wai-preset', key: item.id },
-          h('div', { className: 'wai-preset-head' },
-            h('code', { className: 'wai-preset-id' }, item.id),
-            h('span', { className: 'wai-preset-name' }, item.title || item.id)),
-          h('div', { className: 'wai-preset-hint' }, item.hint || ''),
-          h('div', { className: 'wai-preset-action' },
-            h('button', {
-              className: 'wai-btn',
-              onClick: () => copy(item),
-            }, copiedId === item.id ? T.presetCopied : T.presetCopy))))));
+        h('div', null, state.items.map((item) => {
+          const lv = levelOf(item);
+          const open = openId === item.id;
+          const callText = `web_ai_discuss(prompt="<你的问题>", preset="${item.id}:${level}")`;
+          return h('div', { className: 'wai-preset', key: item.id },
+            h('div', { className: 'wai-preset-head' },
+              h('code', { className: 'wai-preset-id' }, item.id),
+              h('span', { className: 'wai-preset-name' }, item.title || item.id),
+              lv ? h('span', { className: 'wai-preset-id' }, ':' + lv.id) : null),
+            h('div', { className: 'wai-preset-hint' }, item.hint || ''),
+            h('div', { className: 'wai-preset-action' },
+              h('button', {
+                className: 'wai-btn wai-btn-ghost',
+                onClick: () => setOpenId(open ? null : item.id),
+              }, open ? T.presetHide : T.presetShow),
+              h('button', {
+                className: 'wai-btn wai-btn-ghost',
+                onClick: () => copy(item, callText, T.presetCall, setCopiedId),
+              }, copiedId === item.id ? T.presetCallCopied : T.presetCall)),
+            open && lv
+              ? h('div', { className: 'wai-preset-more' },
+                h('pre', { className: 'wai-preset-tmpl' }, lv.template),
+                h('div', { className: 'wai-actions', style: { marginTop: 8 } },
+                  h('button', {
+                    className: 'wai-btn wai-btn-ghost',
+                    onClick: () => copy(item, lv.template, T.presetCopy, setCopiedId),
+                  }, copiedId === item.id ? T.presetCopied : T.presetCopy)))
+              : null);
+        })));
     }
 
-    /** 面板内容（不含外层滚动容器），设置页分区复用它。 */
-    function PanelContent() {
+    /** 分区切换：侧边栏窄栏里不必把所有内容堆在一起往下翻。 */
+    function Tabs(props) {
+      const [tab, setTab] = React.useState(props.initial || 'overview');
+      const panes = props.panes || [];
+      return h('div', null,
+        h('div', { className: 'wai-tabs', role: 'tablist' },
+          panes.map((p) => h('button', {
+            key: p.id,
+            className: 'wai-tab',
+            role: 'tab',
+            'aria-selected': p.id === tab ? 'true' : 'false',
+            'data-active': p.id === tab ? 'true' : 'false',
+            onClick: () => setTab(p.id),
+          }, p.label))),
+        h('div', { className: 'wai-pane', role: 'tabpanel' },
+          (panes.find((p) => p.id === tab) || panes[0] || {}).content));
+    }
+
+    /** 概览分区：状态、用法与说明。 */
+    function OverviewPane() {
       const [copied, setCopied] = React.useState(false);
       const copy = () => {
         try {
@@ -1455,12 +1668,7 @@ window.__ModuleLoader__.load({
             .catch(() => {});
         } catch (e) { /* ignore */ }
       };
-      return h('div', { className: 'wai-wrap' },
-        h('div', { className: 'wai-head' },
-          h('h1', { className: 'wai-h1' }, T.title),
-          h('span', { className: 'wai-build' }, `build ${CLIENT_BUILD}`)),
-        h('p', { className: 'wai-lead' }, T.lead),
-        h('div', { className: 'wai-note' }, T.when),
+      return h('div', null,
         h(LiveStatus, {}),
         h('div', { className: 'wai-actions' },
           h('button', { className: 'wai-btn', onClick: copy }, copied ? T.copied : T.copy)),
@@ -1475,9 +1683,52 @@ window.__ModuleLoader__.load({
             h('span', { className: 'wai-row-k' }, h('code', { className: 'wai-code' }, k)),
             h('span', { className: 'wai-row-d' }, d)))),
           h('div', { className: 'wai-section-label' }, T.limitsTitle),
-          h('ul', { className: 'wai-list' }, T.limits.map((text, i) => h('li', { key: i }, text)))),
-        h(Fold, { title: T.presetTitle }, h(PresetBlock, {})),
-        h(Fold, { title: T.settingsTitle }, h(SettingsForm, {})));
+          h('ul', { className: 'wai-list' }, T.limits.map((text, i) => h('li', { key: i }, text)))));
+    }
+
+    /**
+     * 面板内容（不含外层滚动容器）。
+     * mode='tabs'：侧边栏用，分区切换，窄栏不必一路往下翻。
+     * mode='flat'：设置页分区用，直接铺开（设置表单必须一眼可见，不能藏在 Tab 后面）。
+     */
+    function PanelContent(props) {
+      const flat = !!(props && props.mode === 'flat');
+      const head = [
+        h('div', { className: 'wai-head' },
+          h('h1', { className: 'wai-h1' }, T.title),
+          h('span', { className: 'wai-build' }, `build ${CLIENT_BUILD}`)),
+        h('p', { className: 'wai-lead' }, T.lead),
+        h('div', { className: 'wai-note' }, T.when),
+      ];
+      if (flat) {
+        return h('div', { className: 'wai-wrap' },
+          ...head,
+          h(LiveStatus, {}),
+          h(Fold, { title: T.usageTitle },
+            h('p', { className: 'wai-text' }, T.store),
+            h('div', { className: 'wai-section-label' }, T.guardTitle),
+            h('div', null, T.guards.map(([k, d]) => h('div', { className: 'wai-row', key: k },
+              h('span', { className: 'wai-row-k' }, k),
+              h('span', { className: 'wai-row-d' }, d)))),
+            h('div', { className: 'wai-section-label' }, T.codesTitle),
+            h('div', null, T.codes.map(([k, d]) => h('div', { className: 'wai-row', key: k },
+              h('span', { className: 'wai-row-k' }, h('code', { className: 'wai-code' }, k)),
+              h('span', { className: 'wai-row-d' }, d)))),
+            h('div', { className: 'wai-section-label' }, T.limitsTitle),
+            h('ul', { className: 'wai-list' }, T.limits.map((text, i) => h('li', { key: i }, text)))),
+          h(Fold, { title: T.presetTitle }, h(PresetBlock, {})),
+          h(SettingsForm, {}));
+      }
+      return h('div', { className: 'wai-wrap' },
+        ...head,
+        h(Tabs, {
+          initial: 'overview',
+          panes: [
+            { id: 'overview', label: T.tabOverview, content: h(OverviewPane, {}) },
+            { id: 'preset', label: T.tabPreset, content: h(PresetBlock, {}) },
+            { id: 'settings', label: T.tabSettings, content: h(SettingsForm, {}) },
+          ],
+        }));
     }
 
     function Panel() {
@@ -1563,7 +1814,7 @@ window.__ModuleLoader__.load({
             id: PANEL_ID,
             order: 55,
             label: () => T.panel,
-          }, () => h('div', { className: 'wai-root', style: { height: 'auto' } }, h(PanelContent, {})))));
+          }, () => h('div', { className: 'wai-root', style: { height: 'auto' } }, h(PanelContent, { mode: 'flat' })))));
         }
       };
       mount();
