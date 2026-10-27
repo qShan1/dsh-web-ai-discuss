@@ -14,6 +14,7 @@
 
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Guard } from '../lib/guard.js';
@@ -105,6 +106,12 @@ async function makeHarness({ mode = 'ok', config = {} } = {}) {
     process.chdir(previousCwd);
     if (previousMode === undefined) delete process.env.FAKE_MODE;
     else process.env.FAKE_MODE = previousMode;
+    // 清理本次用例的临时目录（此前每跑一次用例就在系统 temp 里留一个 wai-case-* 目录）
+    try {
+      rmSync(root, { recursive: true, force: true });
+    } catch {
+      /* 清理失败不影响用例结论 */
+    }
   };
 
   return { root, tools, cfg, guard, restore, exec: { agent: { id: 'session-test-1' } } };

@@ -973,6 +973,30 @@ window.__ModuleLoader__.load({
         out.place = place;
       } catch (e) { out.placeError = String((e && e.message) || e); }
 
+      // 3a) 页面里**实际渲染出来的 DOM** 是哪一版？
+      // 关键区分：服务器给的 bundle 可能是新版，但页面里跑的 React 模块实例可能是旧的
+      // （旧实例的 apply() 没被销毁 → 它上报的 build 仍是旧值）。
+      // 所以这里直接量 DOM：新结构有 .wai-tabs / .wai-level-bar / .wai-seg，旧结构没有。
+      try {
+        const dom = {
+          tabs: document.querySelectorAll('.wai-tabs').length,
+          tabButtons: document.querySelectorAll('.wai-tab').length,
+          levelBar: document.querySelectorAll('.wai-level-bar').length,
+          seg: document.querySelectorAll('.wai-seg').length,
+          segItems: document.querySelectorAll('.wai-seg-item').length,
+          presetBlocks: document.querySelectorAll('.wai-preset').length,
+          stats: document.querySelectorAll('.wai-stats').length,
+          buildStamp: null,
+          buildStamps: [],
+        };
+        const stamps = document.querySelectorAll('.wai-build');
+        for (let i = 0; i < stamps.length && dom.buildStamps.length < 8; i += 1) {
+          dom.buildStamps.push(String(stamps[i].textContent || '').trim());
+        }
+        dom.buildStamp = dom.buildStamps[0] || null;
+        out.dom = dom;
+      } catch (e) { out.domError = String((e && e.message) || e); }
+
       // 3b) 探针：面板是「点开才渲染」的，首帧往往不存在，
       // 所以自己造一个带插件类名的临时节点，量「样式规则到底生效没有」。
       // 这比等面板打开更可靠，也不打扰用户。

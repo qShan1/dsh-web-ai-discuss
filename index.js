@@ -145,6 +145,8 @@ export function apply(ctx, config) {
     const disposers = [];
     /** 客户端上报的最近一次 DOM/CSS 诊断（宿主进程内存，仅本地可读）。 */
     let lastDiag = null;
+    /** 最近若干次上报的摘要（谁在报、报的是哪一版），用来分辨「多实例同时上报」。 */
+    const diagLog = [];
 
     const routes = [
       {
@@ -186,7 +188,7 @@ export function apply(ctx, config) {
         handler: async (request, response) => {
           try {
             if (request.method === 'GET') {
-              sendJson(response, 200, { ok: true, diag: lastDiag });
+              sendJson(response, 200, { ok: true, diag: lastDiag, log: diagLog });
               return;
             }
             if (request.method === 'POST') {
@@ -196,6 +198,12 @@ export function apply(ctx, config) {
               }
               const input = await readJsonBody(request);
               lastDiag = { receivedAt: new Date().toISOString(), report: input };
+              diagLog.push({
+                at: lastDiag.receivedAt,
+                build: input && input.build ? String(input.build) : null,
+                dom: input && input.dom ? input.dom : null,
+              });
+              while (diagLog.length > 20) diagLog.shift();
               sendJson(response, 200, { ok: true });
               return;
             }
