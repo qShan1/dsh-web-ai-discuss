@@ -213,7 +213,14 @@ await flush(); // SettingsForm 的 load effect → fetch → setState
 resetHooks();
 const panelText2 = textOf(mainSlot.component({}));
 check('设置区：展开后 GET 打到正确路由',
-  fetchCalls.length >= 1 && fetchCalls[0].url === '/web-ai-discuss/api/settings', fetchCalls.map((f) => f.url));
+  fetchCalls.some((f) => f.url === '/web-ai-discuss/api/settings'),
+  fetchCalls.map((f) => f.url));
+check('运行状态：GET 打到 /status 路由',
+  fetchCalls.some((f) => f.url === '/web-ai-discuss/api/status'),
+  fetchCalls.map((f) => f.url));
+check('运行状态：渲染用量/空间/记录三项',
+  panelText2.includes('窗口用量') && panelText2.includes('ego 空间') && panelText2.includes('讨论记录'),
+  panelText2.slice(panelText2.indexOf('运行状态'), panelText2.indexOf('运行状态') + 160));
 check('设置区：渲染分组标题（护栏/发送与判定/输出与扩展）',
   panelText2.includes('发送与判定') && panelText2.includes('输出与扩展'),
   panelText2.slice(panelText2.indexOf('自定义设置'), panelText2.indexOf('自定义设置') + 220));

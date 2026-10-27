@@ -12,6 +12,7 @@
 
 import { PLUGIN_NAME, resolveConfig } from './lib/config.js';
 import { Guard } from './lib/guard.js';
+import { Mutex } from './lib/mutex.js';
 import { registerTools } from './lib/tools.js';
 import { readSettings, saveSettings, resetSettings, validateSettingsInput, EDITABLE_FIELDS } from './lib/settings.js';
 
@@ -83,6 +84,7 @@ export function apply(ctx, config) {
   const settings = readSettings(rawConfig);
   const cfg = resolveConfig({ ...rawConfig, ...settings });
   const guard = new Guard(cfg);
+  const mutex = new Mutex();
   const logger = ctx.logger ?? console;
 
   // 运行中重配：保存设置后同步替换 cfg 字段（resolveConfig 已钳制，护栏关不掉）。
@@ -112,7 +114,7 @@ export function apply(ctx, config) {
   }
 
   try {
-    registerTools({ ctx, cfg, guard, logger });
+    registerTools({ ctx, cfg, guard, mutex, logger });
   } catch (error) {
     logger?.error?.(`[${PLUGIN_NAME}] failed to register tools`, error);
     throw error;
@@ -125,6 +127,47 @@ export function apply(ctx, config) {
     const disposers = [];
 
     const routes = [
+      {
+        kind: 'exact',
+        path: `${base}/status`,
+        handler: async (request, response) => {
+          try {
+            if (request.method !== 'GET') {
+              response.writeHead(405, { allow: 'GET' });
+              response.end();
+              return;
+            }
+            // 护栏与空间锁是**运行时**状态，只在宿主进程里，GET 现取。
+            const { listDiscussions } = await import('./lib/store.js');
+            const recent = await listDiscussions(cfg, 5);
+            const all = await listDiscussions(cfg, 200);
+            sendJson(response, 200, {
+              ok: true,
+              at: new Date().toISOString(),
+              guardrails: guard.snapshot(),
+              space: mutex.snapshot(),
+              storeStats: {
+                discussions: all.length,
+                oldestAt: all.length ? all[all.length - 1].createdAt : null,
+                newestAt: all.length ? all[0].createdAt : null,
+              },
+              recent,
+              effective: {
+                minGapMs: cfg.minGapMs, jitterMs: cfg.jitterMs, windowMs: cfg.windowMs,
+                windowLimit: cfg.windowLimit, pollMs: cfg.pollMs, stableSamples: cfg.stableSamples,
+                sendTimeoutMs: cfg.sendTimeoutMs, maxAnswerChars: cfg.maxAnswerChars,
+                defaultNewChat: cfg.defaultNewChat, followUpChars: cfg.followUpChars,
+                placement: cfg.placement, composerDock: cfg.composerDock,
+                systemPromptSection: cfg.systemPromptSection,
+                webhookUrl: cfg.webhookUrl, webhookTimeoutMs: cfg.webhookTimeoutMs,
+                hooksFile: cfg.hooksFile,
+              },
+            });
+          } catch (error) {
+            sendJson(response, 500, { ok: false, error: String(error?.message ?? error) });
+          }
+        },
+      },
       {
         kind: 'exact',
         path: `${base}/settings`,

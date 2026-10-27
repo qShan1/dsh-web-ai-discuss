@@ -17,6 +17,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Guard } from '../lib/guard.js';
+import { Mutex } from '../lib/mutex.js';
 import { resolveConfig } from '../lib/config.js';
 import { registerTools } from '../lib/tools.js';
 
@@ -90,7 +91,10 @@ async function makeHarness({ mode = 'ok', config = {} } = {}) {
     ...config,
   });
   const guard = new Guard(cfg);
-  registerTools({ ctx, cfg, guard });
+  const mutex = new Mutex();
+  registerTools({ ctx, cfg, guard, mutex });
+  // harness 里 status 的 probe 与 read 的 live 都要真的进 ego，所以 fake 必须慢；
+  // 否则两个调用可能一个已经结束，另一个才开始，测不出互斥。
 
   const previousCwd = process.cwd();
   const previousMode = process.env.FAKE_MODE;
@@ -252,6 +256,83 @@ const cases = [
       assert.equal(value.ego.found, true);
       assert.equal(value.guardrails.serial, true);
       return `ego=${value.ego.source}`;
+    } finally {
+      h.restore();
+    }
+  }),
+
+  record('非法 id（路径穿越）→ not_found，不读盘外文件', async () => {
+    const h = await makeHarness({ mode: 'ok' });
+    try {
+      const read = h.tools.get('web_ai_read_discussion');
+      for (const bad of ['../../profiles/desktop/package', '..\\..\\package', 'd-20261024-220234-da74/../../../package']) {
+        const value = await read.execute({ id: bad }, h.exec);
+        assert.equal(value.code, 'not_found', `id=${bad} 应为 not_found`);
+        assert.equal(value.latest ?? null, null);
+      }
+      // 合法 id 仍能读
+      const discuss = h.tools.get('web_ai_discuss');
+      const ok = await discuss.execute({ prompt: '在吗' }, h.exec);
+      const back = await read.execute({ id: ok.discussionId }, h.exec);
+      assert.equal(back.code, 'ok');
+      return 'traversal blocked, valid id ok';
+    } finally {
+      h.restore();
+    }
+  }),
+
+  record('ego 空间互斥：live 读与 probe 并发 → 一次 busy', async () => {
+    const h = await makeHarness({ mode: 'slow' });
+    try {
+      const read = h.tools.get('web_ai_read_discussion');
+      const status = h.tools.get('web_ai_status');
+      const [a, b] = await Promise.all([
+        read.execute({ live: true }, h.exec),
+        status.execute({ probe: true }, h.exec),
+      ]);
+      const codes = [a.code, b.code].sort();
+      assert.ok(codes.includes('busy'), `应有一个 busy，实际 ${codes.join('/')}`);
+      const busy = a.code === 'busy' ? a : b;
+      assert.equal(busy.reason, 'ego_space_busy');
+      return `codes=${codes.join('/')}`;
+    } finally {
+      h.restore();
+    }
+  }),
+
+  record('字符串 "true" 被当作布尔 true（模型可能传字符串）', async () => {
+    const h = await makeHarness({ mode: 'ok' });
+    try {
+      const discuss = h.tools.get('web_ai_discuss');
+      const value = await discuss.execute({ prompt: '在吗', newChat: 'true' }, h.exec);
+      assert.equal(value.code, 'ok');
+      // newChat='true' 必须被当作 true（不是退回 false）
+      assert.equal(value.newChat, true);
+      return 'newChat coerced';
+    } finally {
+      h.restore();
+    }
+  }),
+
+  record('等待间隔期间被取消 → 护栏不卡死（busy 归零）', async () => {
+    const h = await makeHarness({ mode: 'ok' });
+    try {
+      const guard = new Guard(resolveConfig({ minGapMs: 5000, jitterMs: 1000 }));
+      // 先跑一次把 lastFinishedAt 推到现在
+      await guard.acquire();
+      guard.release();
+      const controller = new AbortController();
+      const pending = guard.acquire({ signal: controller.signal });
+      setTimeout(() => controller.abort(), 50);
+      const result = await pending;
+      assert.equal(result.ok, false);
+      assert.equal(result.reason, 'aborted_while_waiting');
+      assert.equal(guard.busy, false, '取消后 busy 必须归零');
+      // 取消不计入配额
+      const before = guard.snapshot().totalCalls;
+      const after = guard.snapshot().totalCalls;
+      assert.equal(before, after);
+      return 'busy released';
     } finally {
       h.restore();
     }

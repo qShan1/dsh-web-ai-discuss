@@ -78,6 +78,36 @@ plugin_manager({ action: 'install_bundle', target: '<绝对路径>/dsh-web-ai-di
 - `unauthorized` —— 网页端要人接管，浏览器已交出去，`handoff.started=true`
 - `timeout` —— 等到超时仍没等到稳定回答，`partial` 给已抓到的片段
 - `unavailable` —— 本机找不到 ego-browser
+- `not_found` —— 讨论 id 不存在**或不合法**（id 必须匹配 `d-YYYYMMDD-HHMMSS-xxxx`，防止路径穿越）
+
+### 布尔参数容错
+
+`newChat` / `live` / `probe` 同时接受真正的布尔和字符串 `"true"`——模型常把布尔当字符串传，
+直接用 `=== true` 判断会静默退回旧行为（基线不干净、探测不执行）。字符串 `"false"` 视为 false。
+
+### ego 空间互斥
+
+`discuss`、`web_ai_read_discussion(live=true)`、`web_ai_status(probe=true)` 都要操作**同一个 ego 任务空间
+里的同一个页面**。插件进程内用一把互斥锁串起来：拿不到锁立刻返回 `busy`（`reason='ego_space_busy'`），
+不会把正在讨论的页面导航走。
+
+### 运行状态接口
+
+`GET /web-ai-discuss/api/status` —— 护栏用量与空间锁是**运行时**状态（只在宿主进程里），所以现取：
+
+```json
+{
+  "ok": true,
+  "guardrails": { "busy": false, "windowUsed": 2, "windowLimit": 6, "totalCalls": 11,
+                  "rejectedBusy": 1, "rejectedRate": 0 },
+  "space": { "locked": false, "holder": null },
+  "storeStats": { "discussions": 12 },
+  "recent": [ { "id": "d-20261027-131502-9a6b", "title": "…", "createdAt": "…" } ],
+  "effective": { "minGapMs": 7000, "placement": "sidebar", "…": "…" }
+}
+```
+
+面板的「运行状态」块就是读它；也可用 `curl` 直接查。
 
 ## 护栏参数
 
@@ -101,7 +131,7 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
 | 位置 | 内容 |
 |---|---|
 | 侧边栏格子 | 图标入口（气泡几何图形，选中态不降透明度），点了切到中央面板 |
-| 中央面板 `main` | 标题 + 构建戳 `build x.y.z`、定位说明、调用模板（一键复制）、`用法与说明`（三重护栏 / 返回码 / 已知限制）、`自定义设置` |
+| 中央面板 `main` | 标题 + 构建戳 `build x.y.z`、定位说明、**运行状态块**（窗口用量 / ego 空间 / 记录数 / 最近 5 条）、调用模板（一键复制）、`用法与说明`（三重护栏 / 返回码 / 已知限制）、`自定义设置` |
 | 会话工具卡片 | 每次 `web_ai_discuss` 的结果卡片：返回码徽章、耗时、`discussionId`（可直接传给 `followUp`）、回答原文、一键复制回答；失败态显示 `reason` / `message` / 半成品 `partial` |
 | 设置页分区 | `placement` 含 `settings` 时，在设置里占一页，内容与中央面板一致 |
 | 输入框下方 | `composerDock=true` 且 `placement` 含侧边栏时，输入框下方多一个快捷入口 |
@@ -121,7 +151,7 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
 
 ```bash
 node test/render.mjs     # 用真实组件函数渲染静态页到 out/panel*.html（含亮/暗、折叠/展开四种）
-node test/client.mjs     # 桩 React 加载真实 client.js：slot 注册、文案、渲染、位置切换 39 条断言
+node test/client.mjs     # 桩 React 加载真实 client.js：slot 注册、文案、渲染、位置切换 41 条断言
 ```
 
 `out/panel-expanded.html` 可直接用浏览器打开看完整表单；`test/render.mjs` 里的序列化器保留 SVG 的
@@ -159,7 +189,7 @@ HTTP 契约（同源守卫，exact 路由 `/web-ai-discuss/api/settings`）：
 
 1. 护栏取票（busy / 间隔 / 配额）；`followUp` 先折历史问答进 context
 2. 定位 ego 可执行文件
-3. 生成 ego 脚本：`taskSpace('dsh-web-ai-discuss')` → 取/建页面 → 必要时 `goto`（默认 `newChat=true` 会先回新会话）→ 等输入框
+3. 生成 ego 脚本：`taskSpace('dsh-web-ai-discuss')` → 取/建页面 → 必要时 `goto`，若 `newChat=true` 再显式点「开启新对话」（DeepSeek 会把首页重定向到上次会话，不点就还是旧会话）→ 等输入框
 4. 读页面状态：输入框存在？被禁用？有登录弹窗？已有几个回答气泡？
 5. 未登录 → `task.handOff()` → 返回 `unauthorized`
 6. **滚动到底**（真正的聊天滚动容器是 `div[class*="ds-virtual-list--printable"]`，虚拟列表只有贴底才渲染新消息）→ 填入（`fill` → evaluate 原生 setter → `keyboard.paste` 三级兜底）
@@ -183,12 +213,12 @@ HTTP 契约（同源守卫，exact 路由 `/web-ai-discuss/api/settings`）：
 ## 测试
 
 ```bash
-node test/cases.mjs    # 宿主侧契约与护栏，10/10
-node test/client.mjs   # 客户端注册与渲染（桩 React），30/30
+node test/cases.mjs    # 宿主侧契约与护栏，14/14
+node test/client.mjs   # 客户端注册与渲染（桩 React），41/41
 node test/smoke.mjs status|probe|read|discuss "问题"   # 真实 ego 冒烟
 ```
 
-`test/cases.mjs` 用「把 egoPath 换成 node.exe + 一个名为 `nodejs` 的替身文件」的办法，让真实 `registerTools` 拿到可控的 ego 返回值，从而覆盖 unavailable / unauthorized / busy / rate_limited / timeout / failed 全部分支。
+`test/cases.mjs` 用「把 egoPath 换成 node.exe + 一个名为 `nodejs` 的替身文件」的办法，让真实 `registerTools` 拿到可控的 ego 返回值，从而覆盖 unavailable / unauthorized / busy / rate_limited / timeout / failed 全部分支。覆盖的边界还有：路径穿越 id、ego 空间互斥、布尔字符串容错、等待间隔期间被取消后护栏是否归位。
 
 ## 已知限制
 
@@ -196,7 +226,7 @@ node test/smoke.mjs status|probe|read|discuss "问题"   # 真实 ego 冒烟
 - 讨论空间常驻 ego，插件不调用 `finish`；需要清理时在 ego 侧手动处理
 - 护栏作用域是**插件进程**，跨进程并发不在保护范围内
 - 网页 DOM 改版会导致选择器失效，届时更新 `lib/script.js`（三处）
-- 侧边栏面板只承载静态说明：宿主与客户端之间没有通用数据通道，真实结果在会话里的工具卡片上
+- 侧边栏面板主要承载说明与运行状态；宿主与客户端之间没有通用数据通道，逐条讨论结果在会话里的工具卡片上
 - 网页端「思考过程」是另一个 `ds-markdown` 节点，选择器已按 `assistant-message-main-content` 精确排除
 - **长会话连发同一问题的可靠性依赖 `newChat=true` 默认值**：`newChat=false` 沿用旧会话时，虚拟列表 + 重渲染抖动可能导致完成判定超时（发送本身已有多重确认兜底）；确需追问请配 `followUp`
 - `lib/hooks.js` 双出口（`webhookUrl` / `hooksFile`）是自定义扩展点：`discuss.ok` 事件推送 `{id,title,prompt,answer,elapsedMs,discussionId}`，钩子异常只进 `notify` 不影响返回码
@@ -212,9 +242,10 @@ dsh-web-ai-discuss/
   lib/ego.js            # ego 定位、子进程执行、结果读取
   lib/script.js         # 生成 ego 脚本文本（probe/read/discuss）
   lib/guard.js          # 三重护栏
-  lib/store.js          # 讨论落盘与索引
+  lib/mutex.js          # ego 空间互斥锁（discuss / live 读 / probe 共用同一页面）
+  lib/store.js          # 讨论落盘与索引（id 白名单，防路径穿越）
   lib/tools.js          # 三个工具定义与返回码映射
-  client.js             # 侧边栏图标 + 中央面板 + 工具卡片
+  client.js             # 侧边栏图标 + 中央面板 + 运行状态块 + 工具卡片
   locale/{zh,en}.json   # Plugin Manager 展示元数据
   icon.svg              # 原创图标
   test/                 # cases / client / smoke

@@ -97,6 +97,18 @@ window.__ModuleLoader__.load({
           '护栏作用域是插件进程，跨进程并发不在保护范围内',
           '网页改版会影响 DOM 选择器，届时需更新 lib/script.js',
         ],
+        liveTitle: '运行状态',
+        liveRefresh: '刷新',
+        liveLoading: '读取中…',
+        liveFail: '读取运行状态失败（宿主路由未挂载？）',
+        liveIdle: '空闲',
+        liveBusy: '讨论进行中',
+        liveQuota: '窗口用量',
+        liveSpace: 'ego 空间',
+        liveSpaceFree: '空闲',
+        liveSpaceHeld: '被占用',
+        liveDiscussions: '讨论记录',
+        liveNever: '尚无记录',
       }
       : {
         panel: 'DeepSeek talk',
@@ -153,6 +165,18 @@ window.__ModuleLoader__.load({
           'Guardrails are process-scoped; cross-process concurrency is out of scope',
           'Web redesigns can break the DOM selectors in lib/script.js',
         ],
+        liveTitle: 'Runtime status',
+        liveRefresh: 'Refresh',
+        liveLoading: 'Loading…',
+        liveFail: 'Failed to read runtime status (host route not mounted?)',
+        liveIdle: 'idle',
+        liveBusy: 'discussion in progress',
+        liveQuota: 'window usage',
+        liveSpace: 'ego space',
+        liveSpaceFree: 'free',
+        liveSpaceHeld: 'held',
+        liveDiscussions: 'discussions',
+        liveNever: 'none yet',
       };
 
     /* @wai-css-start */
@@ -380,6 +404,66 @@ window.__ModuleLoader__.load({
 .wai-status-error {
   color: var(--dsw-alias-state-error, #c0392b);
   white-space: pre-wrap;
+}
+
+/* 运行状态块 */
+.wai-live {
+  margin-top: 12px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.26));
+  background: var(--dsw-alias-bg-secondary, rgba(127,127,127,0.06));
+}
+.wai-live-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.wai-live-title { font-size: 12.5px; font-weight: 600; }
+.wai-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  flex: none;
+  background: var(--dsw-alias-state-success, #128a4a);
+}
+.wai-live-dot[data-busy="true"] { background: var(--dsw-alias-state-warning, #b8860b); }
+.wai-live-dot[data-busy="error"] { background: var(--dsw-alias-state-error, #c0392b); }
+.wai-live-grid {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 4px 12px;
+  align-items: baseline;
+}
+.wai-live-k { font-size: 12px; color: var(--dsw-alias-text-secondary, #6b6b6b); }
+.wai-live-v {
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+}
+.wai-live-list { margin: 8px 0 0; padding: 0; list-style: none; }
+.wai-live-list li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 3px 0;
+  border-top: 1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.16));
+  font-size: 12.5px;
+}
+.wai-live-list li:first-child { border-top: none; }
+.wai-live-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--dsw-alias-text-secondary, #6b6b6b);
+  flex: none;
+}
+.wai-live-title-txt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wai-card {
@@ -856,6 +940,70 @@ window.__ModuleLoader__.load({
         h('div', { className: 'wai-card-body' }, String(answer)));
     });
 
+    /** 运行状态块：现读宿主 /web-ai-discuss/api/status（护栏与空间锁是运行时状态）。 */
+    function LiveStatus() {
+      const [state, setState] = React.useState({ loading: true, data: null, error: null });
+      const load = React.useCallback(() => {
+        setState((s) => ({ ...s, loading: true }));
+        fetch('/web-ai-discuss/api/status', { headers: { accept: 'application/json' } })
+          .then((r) => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+          })
+          .then((d) => setState({ loading: false, data: d, error: null }))
+          .catch((e) => setState({ loading: false, data: null, error: String(e && e.message ? e.message : e) }));
+      }, []);
+      React.useEffect(() => { load(); }, [load]);
+
+      if (state.error) {
+        return h('div', { className: 'wai-live' },
+          h('div', { className: 'wai-live-head' },
+            h('span', { className: 'wai-live-dot', 'data-busy': 'error' }),
+            h('span', { className: 'wai-live-title' }, T.liveTitle),
+            h('button', { className: 'wai-btn', style: { marginLeft: 'auto', minHeight: 26 }, onClick: load }, T.liveRefresh)),
+          h('div', { className: 'wai-status-error' }, T.liveFail + ' (' + state.error + ')'));
+      }
+      if (state.loading && !state.data) {
+        return h('div', { className: 'wai-live' },
+          h('div', { className: 'wai-live-head' },
+            h('span', { className: 'wai-live-dot', 'data-busy': 'true' }),
+            h('span', { className: 'wai-live-title' }, T.liveTitle)),
+          h('div', { className: 'wai-muted' }, T.liveLoading));
+      }
+      const d = state.data || {};
+      const g = d.guardrails || {};
+      const busy = g.busy === true;
+      const spaceHeld = d.space && d.space.locked === true;
+      const recent = Array.isArray(d.recent) ? d.recent : [];
+      const quota = typeof g.windowUsed === 'number' && typeof g.windowLimit === 'number'
+        ? g.windowUsed + ' / ' + g.windowLimit
+        : '-';
+      return h('div', { className: 'wai-live' },
+        h('div', { className: 'wai-live-head' },
+          h('span', { className: 'wai-live-dot', 'data-busy': busy ? 'true' : 'false' }),
+          h('span', { className: 'wai-live-title' }, T.liveTitle),
+          h('span', { className: 'wai-muted' }, busy ? T.liveBusy : T.liveIdle),
+          h('button', { className: 'wai-btn', style: { marginLeft: 'auto', minHeight: 26 }, onClick: load }, T.liveRefresh)),
+        h('div', { className: 'wai-live-grid' },
+          h('span', { className: 'wai-live-k' }, T.liveQuota), h('span', { className: 'wai-live-v' }, quota),
+          h('span', { className: 'wai-live-k' }, T.liveSpace),
+          h('span', { className: 'wai-live-v' }, spaceHeld ? T.liveSpaceHeld : T.liveSpaceFree),
+          h('span', { className: 'wai-live-k' }, T.liveDiscussions),
+          h('span', { className: 'wai-live-v' },
+            String((d.storeStats && d.storeStats.discussions) || 0)),
+          h('span', { className: 'wai-live-k' }, 'total calls'),
+          h('span', { className: 'wai-live-v' },
+            String((typeof g.totalCalls === 'number' ? g.totalCalls : 0)
+              + ' / busy ' + (typeof g.rejectedBusy === 'number' ? g.rejectedBusy : 0)
+              + ' / rate ' + (typeof g.rejectedRate === 'number' ? g.rejectedRate : 0)))),
+        recent.length
+          ? h('ul', { className: 'wai-live-list' },
+            recent.map((r) => h('li', { key: r.id },
+              h('span', { className: 'wai-live-id' }, String(r.id || '')),
+              h('span', { className: 'wai-live-title-txt', title: String(r.title || '') }, String(r.title || '')))))
+          : h('div', { className: 'wai-muted', style: { marginTop: 8 } }, T.liveNever));
+    }
+
     /** 面板内容（不含外层滚动容器），设置页分区复用它。 */
     function PanelContent() {
       const [copied, setCopied] = React.useState(false);
@@ -872,6 +1020,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'wai-sub' }, `build ${CLIENT_BUILD}`)),
         h('p', { className: 'wai-lead' }, T.lead),
         h('div', { className: 'wai-note' }, T.when),
+        h(LiveStatus, {}),
         h('div', { className: 'wai-actions' },
           h('button', { className: 'wai-btn', onClick: copy }, copied ? T.copied : T.copy)),
         h(Fold, { title: T.usageTitle },

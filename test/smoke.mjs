@@ -76,7 +76,8 @@ if (cmd === 'status') {
       spaceName: cfg.spaceName,
       url: cfg.url,
       prompt,
-      newChat: process.env.NEW_CHAT === '1',
+      // 与工具默认值保持一致（cfg.defaultNewChat）；NEW_CHAT=0 可显式关掉。
+      newChat: process.env.NEW_CHAT === '0' ? false : cfg.defaultNewChat !== false,
       pollMs: cfg.pollMs,
       stableSamples: cfg.stableSamples,
       sendTimeoutMs: cfg.sendTimeoutMs,

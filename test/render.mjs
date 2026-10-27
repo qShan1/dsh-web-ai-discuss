@@ -64,9 +64,27 @@ const SETTINGS_BODY = {
     webhookUrl: '', hooksFile: '', defaultNewChat: true,
   },
 };
-globalThis.fetch = () => Promise.resolve({
+const STATUS_BODY = {
+  ok: true,
+  at: '2026-10-27T05:20:00.000Z',
+  guardrails: {
+    serial: true, busy: false, minGapMs: 7000, jitterMs: 3000,
+    windowMs: 3600000, windowLimit: 6, windowUsed: 2,
+    totalCalls: 11, rejectedBusy: 1, rejectedRate: 0, lastFinishedAt: '2026-10-27T05:19:00.000Z',
+  },
+  space: { locked: false, holder: null },
+  storeStats: { discussions: 12, oldestAt: '2026-10-25T02:00:00.000Z', newestAt: '2026-10-27T05:19:00.000Z' },
+  recent: [
+    { id: 'd-20261027-131502-9a6b', title: '用一句话回答：8+8等于几？', createdAt: '2026-10-27T05:15:02.000Z', answerChars: 8 },
+    { id: 'd-20261027-130951-65f8', title: '用一句话回答：1+1等于几？', createdAt: '2026-10-27T05:09:51.000Z', answerChars: 7 },
+  ],
+  effective: { placement: 'sidebar', composerDock: false },
+};
+globalThis.fetch = (url) => Promise.resolve({
   ok: true, status: 200,
-  json: () => Promise.resolve(SETTINGS_BODY),
+  json: () => Promise.resolve(
+    String(url).includes('/status') ? STATUS_BODY : SETTINGS_BODY,
+  ),
 });
 
 await import(pathToFileURL(CLIENT_PATH).href);
