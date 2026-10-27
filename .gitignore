@@ -4,3 +4,7 @@ node_modules/
 settings.json
 tmp/
 out/
+
+# 临时抓取宿主 bundle 的产物
+served.js
+served-css.txt
