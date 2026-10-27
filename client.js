@@ -106,6 +106,9 @@ window.__ModuleLoader__.load({
         liveSpaceFree: '空闲',
         liveSpaceHeld: '被占用',
         liveDiscussions: '讨论记录',
+        liveTotal: '总调用',
+        liveBusyCount: '占用拒绝',
+        liveRateCount: '限流拒绝',
         liveNever: '尚无记录',
         presetTitle: '预设提示词',
         presetHint: '把提问套进固定回答结构，原始提问原样保留。调用 web_ai_discuss 时传 preset=<id>。',
@@ -180,6 +183,9 @@ window.__ModuleLoader__.load({
         liveSpaceFree: 'free',
         liveSpaceHeld: 'held',
         liveDiscussions: 'discussions',
+        liveTotal: 'total calls',
+        liveBusyCount: 'busy',
+        liveRateCount: 'rate',
         liveNever: 'none yet',
         presetTitle: 'Preset prompts',
         presetHint: 'Wrap your question in a fixed answer structure; the original question is kept verbatim. Pass preset=<id> when calling web_ai_discuss.',
@@ -1166,10 +1172,10 @@ window.__ModuleLoader__.load({
           stat(T.liveQuota, quota),
           stat(T.liveSpace, spaceHeld ? T.liveSpaceHeld : T.liveSpaceFree),
           stat(T.liveDiscussions, String((d.storeStats && d.storeStats.discussions) || 0)),
-          stat('total calls', String(typeof g.totalCalls === 'number' ? g.totalCalls : 0))),
+          stat(T.liveTotal, String(typeof g.totalCalls === 'number' ? g.totalCalls : 0))),
         h('div', { className: 'wai-live-meta' },
-          'busy ' + (typeof g.rejectedBusy === 'number' ? g.rejectedBusy : 0)
-          + ' · rate ' + (typeof g.rejectedRate === 'number' ? g.rejectedRate : 0)),
+          T.liveBusyCount + ' ' + (typeof g.rejectedBusy === 'number' ? g.rejectedBusy : 0)
+          + ' · ' + T.liveRateCount + ' ' + (typeof g.rejectedRate === 'number' ? g.rejectedRate : 0)),
         recent.length
           ? h('ul', { className: 'wai-live-list' },
             recent.map((r) => h('li', { key: r.id },
