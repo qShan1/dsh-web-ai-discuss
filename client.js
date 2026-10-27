@@ -1,5 +1,5 @@
 /**
- * dsh-web-ai-discuss — 客户端（浏览器侧）模块。v0.2.0（未发布开发版）
+ * dsh-web-ai-discuss — 客户端（浏览器侧）模块。v0.3.0（未发布开发版）
  *
  * 三块 UI：
  *   1. sidebar.panellist  侧边栏格子（图标）
@@ -27,11 +27,9 @@ window.__ModuleLoader__.load({
 
     const PANEL_ID = 'web-ai-discuss';
     const TOOL_DISCUSS = 'web_ai_discuss';
-    const TOOL_READ = 'web_ai_read_discussion';
-    const TOOL_STATUS = 'web_ai_status';
     const SETTINGS_API = '/web-ai-discuss/api/settings';
     // 构建戳：面板头部显示。看到它 = 浏览器在跑这版代码；看不到 = client 模块没装载。
-    const CLIENT_BUILD = '0.2.0';
+    const CLIENT_BUILD = '0.3.0';
 
     const isZh = () => {
       try {
@@ -109,6 +107,12 @@ window.__ModuleLoader__.load({
         liveSpaceHeld: '被占用',
         liveDiscussions: '讨论记录',
         liveNever: '尚无记录',
+        presetTitle: '预设提示词',
+        presetHint: '把提问套进固定回答结构，原始提问原样保留。调用 web_ai_discuss 时传 preset=<id>。',
+        presetCopy: '复制模板',
+        presetCopied: '已复制',
+        presetFail: '读取预设失败（宿主路由未挂载？）',
+        presetEmpty: '暂无可用预设',
       }
       : {
         panel: 'DeepSeek talk',
@@ -177,6 +181,12 @@ window.__ModuleLoader__.load({
         liveSpaceHeld: 'held',
         liveDiscussions: 'discussions',
         liveNever: 'none yet',
+        presetTitle: 'Preset prompts',
+        presetHint: 'Wrap your question in a fixed answer structure; the original question is kept verbatim. Pass preset=<id> when calling web_ai_discuss.',
+        presetCopy: 'Copy template',
+        presetCopied: 'Copied',
+        presetFail: 'Failed to load presets (host route not mounted?)',
+        presetEmpty: 'No presets available',
       };
 
     /* @wai-css-start */
@@ -191,7 +201,7 @@ window.__ModuleLoader__.load({
   color: var(--dsw-alias-text-primary, inherit);
   -webkit-font-smoothing: antialiased;
 }
-.wai-root *, .wai-chip-card * { box-sizing: border-box; }
+.wai-root * { box-sizing: border-box; }
 .wai-wrap { max-width: 72ch; }
 
 .wai-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 2px; }
@@ -495,6 +505,10 @@ window.__ModuleLoader__.load({
 .wai-muted { font-size: 12px; color: var(--dsw-alias-text-secondary, #6b6b6b); }
 .wai-muted + .wai-muted { margin-top: 4px; }
 
+.wai-preset-d { display: flex; align-items: center; gap: 10px; }
+.wai-preset-hint { flex: 1; min-width: 0; }
+.wai-preset-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
 .wai-root ::selection, .wai-card ::selection {
   background: var(--dsw-alias-accent, #4b7bec);
   color: #fff;
@@ -535,8 +549,6 @@ window.__ModuleLoader__.load({
       } catch (e) { /* 非浏览器环境忽略 */ }
     }
 
-    const cx = (...names) => names.filter(Boolean).join(' ');
-
     /** 折叠块（纯 DOM 行为）。说明区也走懒挂载：首屏只渲染标题与摘要。 */
     function Fold(props) {
       const [open, setOpen] = React.useState(false);
@@ -549,9 +561,6 @@ window.__ModuleLoader__.load({
           h('span', null, props.title)),
         open ? h('div', { className: 'wai-fold-body' }, props.children) : null);
     }
-
-    /** 别名：设置区语义上是"重内容懒挂载"，与说明区共用实现。 */
-    const LazyFold = Fold;
 
     function Caret() {
       return h('svg', {
@@ -1040,6 +1049,58 @@ window.__ModuleLoader__.load({
           : h('div', { className: 'wai-muted', style: { marginTop: 8 } }, T.liveNever));
     }
 
+    /** 预设提示词块：折叠展开时才挂载并读一次宿主路由（预设清单是插件常量，宿主侧提供）。 */
+    function PresetBlock() {
+      const [state, setState] = React.useState({ loading: true, items: [], error: null });
+      const [copiedId, setCopiedId] = React.useState(null);
+      React.useEffect(() => {
+        let alive = true;
+        fetch('/web-ai-discuss/api/status', { headers: { accept: 'application/json' } })
+          .then((r) => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+          })
+          .then((d) => {
+            if (!alive) return;
+            const items = Array.isArray(d.presets) ? d.presets : [];
+            setState({ loading: false, items, error: null });
+          })
+          .catch((e) => {
+            if (!alive) return;
+            setState({ loading: false, items: [], error: String((e && e.message) || e) });
+          });
+        return () => { alive = false; };
+      }, []);
+
+      const copy = (item) => {
+        try {
+          Promise.resolve(navigator.clipboard.writeText(item.template))
+            .then(() => {
+              setCopiedId(item.id);
+              setTimeout(() => setCopiedId((c) => (c === item.id ? null : c)), 1600);
+            })
+            .catch(() => {});
+        } catch (e) { /* ignore */ }
+      };
+
+      if (state.error) return h('div', { className: 'wai-muted' }, T.presetFail + ' (' + state.error + ')');
+      if (state.loading) return h('div', { className: 'wai-muted' }, T.liveLoading);
+      if (!state.items.length) return h('div', { className: 'wai-muted' }, T.presetEmpty);
+      return h('div', null,
+        h('div', { className: 'wai-muted', style: { marginBottom: 6 } }, T.presetHint),
+        h('div', null, state.items.map((item) => h('div', { className: 'wai-row', key: item.id },
+          h('span', { className: 'wai-row-k' },
+            h('code', { className: 'wai-preset-id' }, item.id),
+            ' ',
+            item.title || item.id),
+          h('span', { className: 'wai-row-d wai-preset-d' },
+            h('span', { className: 'wai-preset-hint' }, item.hint || ''),
+            h('button', {
+              className: 'wai-btn',
+              onClick: () => copy(item),
+            }, copiedId === item.id ? T.presetCopied : T.presetCopy))))));
+    }
+
     /** 面板内容（不含外层滚动容器），设置页分区复用它。 */
     function PanelContent() {
       const [copied, setCopied] = React.useState(false);
@@ -1071,7 +1132,8 @@ window.__ModuleLoader__.load({
             h('span', { className: 'wai-row-d' }, d)))),
           h('div', { className: 'wai-section-label' }, T.limitsTitle),
           h('ul', { className: 'wai-list' }, T.limits.map((text, i) => h('li', { key: i }, text)))),
-        h(LazyFold, { title: T.settingsTitle }, h(SettingsForm, {})));
+        h(Fold, { title: T.presetTitle }, h(PresetBlock, {})),
+        h(Fold, { title: T.settingsTitle }, h(SettingsForm, {})));
     }
 
     function Panel() {

@@ -13,6 +13,7 @@
 import { PLUGIN_NAME, resolveConfig } from './lib/config.js';
 import { Guard } from './lib/guard.js';
 import { Mutex } from './lib/mutex.js';
+import { presetCatalog } from './lib/presets.js';
 import { registerTools } from './lib/tools.js';
 import { readSettings, saveSettings, resetSettings, validateSettingsInput, EDITABLE_FIELDS } from './lib/settings.js';
 
@@ -76,6 +77,23 @@ function sameOrigin(request) {
   } catch {
     return false;
   }
+}
+
+/**
+ * 生效配置的公共视图。/status 与 /settings 两条路由共用，避免两处各写一份。
+ * @param {ReturnType<import('./lib/config.js').resolveConfig>} cfg
+ */
+function effectiveOf(cfg) {
+  return {
+    minGapMs: cfg.minGapMs, jitterMs: cfg.jitterMs, windowMs: cfg.windowMs,
+    windowLimit: cfg.windowLimit, pollMs: cfg.pollMs, stableSamples: cfg.stableSamples,
+    sendTimeoutMs: cfg.sendTimeoutMs, maxAnswerChars: cfg.maxAnswerChars,
+    defaultNewChat: cfg.defaultNewChat, followUpChars: cfg.followUpChars,
+    placement: cfg.placement, composerDock: cfg.composerDock,
+    systemPromptSection: cfg.systemPromptSection,
+    webhookUrl: cfg.webhookUrl, webhookTimeoutMs: cfg.webhookTimeoutMs,
+    hooksFile: cfg.hooksFile,
+  };
 }
 
 export function apply(ctx, config) {
@@ -152,16 +170,8 @@ export function apply(ctx, config) {
                 newestAt: all.length ? all[0].createdAt : null,
               },
               recent,
-              effective: {
-                minGapMs: cfg.minGapMs, jitterMs: cfg.jitterMs, windowMs: cfg.windowMs,
-                windowLimit: cfg.windowLimit, pollMs: cfg.pollMs, stableSamples: cfg.stableSamples,
-                sendTimeoutMs: cfg.sendTimeoutMs, maxAnswerChars: cfg.maxAnswerChars,
-                defaultNewChat: cfg.defaultNewChat, followUpChars: cfg.followUpChars,
-                placement: cfg.placement, composerDock: cfg.composerDock,
-                systemPromptSection: cfg.systemPromptSection,
-                webhookUrl: cfg.webhookUrl, webhookTimeoutMs: cfg.webhookTimeoutMs,
-                hooksFile: cfg.hooksFile,
-              },
+              presets: presetCatalog(),
+              effective: effectiveOf(cfg),
             });
           } catch (error) {
             sendJson(response, 500, { ok: false, error: String(error?.message ?? error) });
@@ -178,15 +188,7 @@ export function apply(ctx, config) {
                 editable: EDITABLE_FIELDS,
                 floor: cfg.floor,
                 settings: readSettings(cfg),
-                effective: {
-                  minGapMs: cfg.minGapMs, jitterMs: cfg.jitterMs, windowMs: cfg.windowMs,
-                  windowLimit: cfg.windowLimit, pollMs: cfg.pollMs, stableSamples: cfg.stableSamples,
-                  sendTimeoutMs: cfg.sendTimeoutMs, maxAnswerChars: cfg.maxAnswerChars,
-                  systemPromptSection: cfg.systemPromptSection, webhookUrl: cfg.webhookUrl,
-                  webhookTimeoutMs: cfg.webhookTimeoutMs, hooksFile: cfg.hooksFile,
-                  defaultNewChat: cfg.defaultNewChat, followUpChars: cfg.followUpChars,
-                  placement: cfg.placement, composerDock: cfg.composerDock,
-                },
+                effective: effectiveOf(cfg),
               });
               return;
             }

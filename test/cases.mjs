@@ -368,6 +368,60 @@ const cases = [
     }
   }),
 
+  record('preset 合法 → 框架套进提问，落盘仍存原始提问', async () => {
+    const h = await makeHarness({ mode: 'ok' });
+    try {
+      const discuss = h.tools.get('web_ai_discuss');
+      const value = await discuss.execute({ prompt: '把这个方案砍到最小', preset: 'simplify' }, h.exec);
+      assert.equal(value.code, 'ok');
+      assert.equal(value.preset, 'simplify');
+      // 落盘的是原始提问，不含框架
+      const back = await h.tools.get('web_ai_read_discussion').execute({ id: value.discussionId }, h.exec);
+      assert.equal(back.code, 'ok');
+      assert.equal(back.items[0].text, 'FAKE ANSWER: ok');
+      const stored = JSON.parse(await readFile(path.join(h.cfg.storeDir, `${value.discussionId}.json`), 'utf8'));
+      assert.equal(stored.prompt, '把这个方案砍到最小');
+      assert.equal(stored.preset, 'simplify');
+      return 'preset=simplify';
+    } finally {
+      h.restore();
+    }
+  }),
+
+  record('preset 非法 → invalid/unknown_preset，且不消耗讨论配额', async () => {
+    const h = await makeHarness({ mode: 'ok' });
+    try {
+      const discuss = h.tools.get('web_ai_discuss');
+      const before = h.guard.snapshot().totalCalls;
+      const value = await discuss.execute({ prompt: '在吗', preset: 'not-a-preset' }, h.exec);
+      assert.equal(value.code, 'invalid');
+      assert.equal(value.reason, 'unknown_preset');
+      assert.ok(Array.isArray(value.available) && value.available.includes('review'));
+      assert.equal(h.guard.snapshot().totalCalls, before, '校验失败不应计入配额');
+      return value.reason;
+    } finally {
+      h.restore();
+    }
+  }),
+
+  record('status 返回预设清单', async () => {
+    const h = await makeHarness({ mode: 'ok' });
+    try {
+      const value = await h.tools.get('web_ai_status').execute({}, h.exec);
+      assert.equal(value.code, 'ok');
+      assert.ok(Array.isArray(value.presets) && value.presets.length >= 8);
+      const ids = value.presets.map((p) => p.id);
+      assert.ok(ids.includes('review') && ids.includes('counterexample'));
+      for (const p of value.presets) {
+        assert.ok(p.template.includes('{prompt}'), `${p.id} 模板应含 {prompt} 占位`);
+        assert.equal((p.template.match(/\{prompt\}/g) || []).length, 1);
+      }
+      return `presets=${value.presets.length}`;
+    } finally {
+      h.restore();
+    }
+  }),
+
   record('等待间隔期间被取消 → 护栏不卡死（busy 归零）', async () => {
     const h = await makeHarness({ mode: 'ok' });
     try {

@@ -29,24 +29,39 @@ const check = (label, cond, detail) => {
 };
 
 // ── 桩环境 ──────────────────────────────────────────────
-// useState 槽位跨渲染持久（按 hook 调用顺序），setter 支持值/函数两种更新；
-// 这样 flush 一个 useEffect 里的异步 setState 后，再渲染能看到新状态。
-const hookSlots = [];
-let hookIndex = 0;
+// 状态按**组件实例**存放，而不是按全局 hook 调用序号：折叠块展开后新挂载的
+// 组件若按全局序号取状态，会串到别的组件的状态槽上（真实 React 按实例隔离）。
+// 实例在多次渲染之间保留，所以展开/收起与异步 setState 的语义与真实 React 一致。
+const instState = new Map();
+let currentInstance = null;
 const effects = [];
+const FALLBACK_INSTANCE = { hookIdx: 0, slots: [] };
+
+function beginInstance(fn) {
+  let rec = instState.get(fn);
+  if (!rec) {
+    rec = { count: 0, instances: [] };
+    instState.set(fn, rec);
+  }
+  const idx = rec.count++;
+  if (!rec.instances[idx]) rec.instances[idx] = { hookIdx: 0, slots: [] };
+  return rec.instances[idx];
+}
+
 const reactStub = {
   createElement(type, props, ...children) {
     const kids = children.length === 0 ? undefined : children.length === 1 ? children[0] : children;
     return { type, props: { ...(props || {}), children: kids } };
   },
   useState(init) {
-    const i = hookIndex;
-    hookIndex += 1;
-    if (hookSlots.length <= i) hookSlots.push(typeof init === 'function' ? init() : init);
+    const inst = currentInstance || FALLBACK_INSTANCE;
+    const i = inst.hookIdx;
+    inst.hookIdx += 1;
+    if (inst.slots.length <= i) inst.slots.push(typeof init === 'function' ? init() : init);
     const set = (next) => {
-      hookSlots[i] = typeof next === 'function' ? next(hookSlots[i]) : next;
+      inst.slots[i] = typeof next === 'function' ? next(inst.slots[i]) : next;
     };
-    return [hookSlots[i], set];
+    return [inst.slots[i], set];
   },
   useEffect(fn) {
     effects.push(fn);
@@ -65,7 +80,15 @@ const reactStub = {
   },
   Fragment: 'Fragment',
 };
-const resetHooks = () => { hookIndex = 0; };
+const resetHooks = () => {
+  for (const rec of instState.values()) {
+    rec.count = 0;
+    // 每个实例的 hook 游标也要归零：新一轮渲染从第 0 个 hook 开始，
+    // 但状态槽位保留（真实 React 就是这样：hook 顺序不变，值延续）。
+    for (const inst of rec.instances) inst.hookIdx = 0;
+  }
+  currentInstance = null;
+};
 
 let spec = null;
 globalThis.window = {
@@ -140,30 +163,56 @@ check('工具卡片：inject(带 sessionId 的输入) 返回 sessionKey',
   view && view.spec.inject && view.spec.inject({ sessionId: 'S-abc' }));
 
 // ── 渲染树取文本 ────────────────────────────────────────
+// 渲染组件时把「当前实例」切到该组件，桩 useState 才知道状态存到哪。
+const renderComponent = (node) => {
+  const prev = currentInstance;
+  currentInstance = beginInstance(node.type);
+  try {
+    return node.type(node.props || {});
+  } finally {
+    currentInstance = prev;
+  }
+};
+
 const textOf = (node) => {
   if (node === null || node === undefined || node === false) return '';
   if (typeof node === 'string' || typeof node === 'number') return String(node);
   if (Array.isArray(node)) return node.map(textOf).join('');
-  if (typeof node === 'object' && typeof node.type === 'function') return textOf(node.type(node.props || {}));
+  if (typeof node === 'object' && typeof node.type === 'function') return textOf(renderComponent(node));
   const kids = node.props ? node.props.children : undefined;
   return textOf(kids);
 };
 
-// 桩 fetch：记录调用
+// 桩 fetch：记录调用。/status 与 /settings 返回不同的体。
+const STATUS_BODY = {
+  ok: true,
+  at: '2026-10-27T05:20:00.000Z',
+  guardrails: { serial: true, busy: false, windowLimit: 6, windowUsed: 2, totalCalls: 11 },
+  space: { locked: false, holder: null },
+  storeStats: { discussions: 12 },
+  recent: [{ id: 'd-20261027-131502-9a6b', title: '用一句话回答：8+8等于几？' }],
+  presets: [
+    { id: 'review', title: '方案评审', hint: '挑出致命问题', template: '请审阅：\n{prompt}' },
+    { id: 'compare', title: '方案对比', hint: '按维度比较', template: '请对比：\n{prompt}' },
+  ],
+};
+const SETTINGS_BODY = {
+  editable: ['minGapMs', 'windowLimit', 'defaultNewChat', 'webhookUrl', 'hooksFile'],
+  floor: { minGapMs: 5000, jitterMs: 1000, windowMs: 600000, windowLimitMax: 20, pollMs: 500, stableSamples: 2 },
+  settings: {},
+  effective: { minGapMs: 7000, jitterMs: 3000, windowMs: 3600000, windowLimit: 6, pollMs: 900,
+    stableSamples: 3, sendTimeoutMs: 180000, maxAnswerChars: 12000, systemPromptSection: true,
+    webhookUrl: '', webhookTimeoutMs: 5000, hooksFile: '', defaultNewChat: true, followUpChars: 4000 },
+};
 let fetchCalls = [];
 globalThis.fetch = (url, init) => {
   fetchCalls.push({ url, init });
   return Promise.resolve({
     ok: true,
     status: 200,
-    json: () => Promise.resolve({
-      editable: ['minGapMs', 'windowLimit', 'defaultNewChat', 'webhookUrl', 'hooksFile'],
-      floor: { minGapMs: 5000, jitterMs: 1000, windowMs: 600000, windowLimitMax: 20, pollMs: 500, stableSamples: 2 },
-      settings: {},
-      effective: { minGapMs: 7000, jitterMs: 3000, windowMs: 3600000, windowLimit: 6, pollMs: 900,
-        stableSamples: 3, sendTimeoutMs: 180000, maxAnswerChars: 12000, systemPromptSection: true,
-        webhookUrl: '', webhookTimeoutMs: 5000, hooksFile: '', defaultNewChat: true, followUpChars: 4000 },
-    }),
+    json: () => Promise.resolve(
+      String(url).includes('/status') ? STATUS_BODY : SETTINGS_BODY,
+    ),
   });
 };
 const flush = async () => {
@@ -181,7 +230,7 @@ const toggleFolds = [];
 const walkCollectToggles = (node) => {
   if (!node || typeof node !== 'object' || node === false) return;
   if (Array.isArray(node)) { node.forEach(walkCollectToggles); return; }
-  if (typeof node.type === 'function') { walkCollectToggles(node.type(node.props || {})); return; }
+  if (typeof node.type === 'function') { walkCollectToggles(renderComponent(node)); return; }
   if (node.props && typeof node.props.onToggle === 'function') toggleFolds.push(node.props.onToggle);
   if (node.props) walkCollectToggles(node.props.children);
 };
@@ -191,15 +240,15 @@ effects.length = 0;
 const panelTree = mainSlot.component({});
 const panelText = textOf(panelTree);
 check('面板：含定位说明', panelText.includes('外部讨论通道'), panelText.slice(0, 60));
-check('面板：含构建戳 0.2.0', panelText.includes('build 0.2.0'), panelText.slice(0, 140));
-check('面板：含两个折叠标题', panelText.includes('用法与说明') && panelText.includes('自定义设置'), panelText.slice(0, 400));
+check('面板：含构建戳 0.3.0', panelText.includes('build 0.3.0'), panelText.slice(0, 140));
+check('面板：含三个折叠标题', panelText.includes('用法与说明') && panelText.includes('预设提示词') && panelText.includes('自定义设置'), panelText.slice(0, 400));
 check('面板：折叠关闭时不渲染护栏/返回码明细',
   !panelText.includes('rate_limited') && fetchCalls.length === 0, { fetches: fetchCalls.length });
 
-// 走一遍收集 LazyFold 的 onToggle（usage 在前、settings 在后）
+// 走一遍收集 Fold 的 onToggle（usage / preset / settings 三个）
 resetHooks();
 walkCollectToggles(mainSlot.component({}));
-check('LazyFold 暴露 onToggle（usage + settings）', toggleFolds.length === 2, toggleFolds.length);
+check('Fold 暴露 onToggle（usage + preset + settings）', toggleFolds.length === 3, toggleFolds.length);
 for (const t of toggleFolds) t({ currentTarget: { open: true } });
 
 // 展开后：护栏/返回码/限制明细出现；SettingsForm 挂载并 GET
@@ -226,6 +275,11 @@ check('设置区：渲染分组标题（护栏/发送与判定/输出与扩展�
   panelText2.slice(panelText2.indexOf('自定义设置'), panelText2.indexOf('自定义设置') + 220));
 check('设置区：渲染字段与下限', panelText2.includes('窗口上限') && panelText2.includes('最小间隔') && panelText2.includes('下限 5000'));
 check('设置区：渲染保存/重新读取/恢复默认按钮', panelText2.includes('保存修改') && panelText2.includes('重新读取') && panelText2.includes('恢复默认'));
+check('预设区：展开后渲染预设条目与 id',
+  panelText2.includes('review') && panelText2.includes('compare')
+  && panelText2.includes('方案评审') && panelText2.includes('方案对比'),
+  panelText2.slice(panelText2.indexOf('预设提示词'), panelText2.indexOf('预设提示词') + 200));
+check('预设区：每条带复制模板按钮', panelText2.includes('复制模板'), panelText2.slice(-200));
 
 // 侧边栏图标
 const iconTree = side.component({ size: 20, active: true });

@@ -18,19 +18,29 @@ const OUT = path.join(HERE, '..', 'out');
 const CLIENT_PATH = path.join(HERE, '..', 'client.js');
 
 // ── 桩 React ──
-const hookSlots = [];
-let hookIndex = 0;
+// 状态按**组件实例**存放（真实 React 按实例隔离状态）；按全局 hook 序号取槽会让
+// 折叠块展开后新挂载的组件串到别的组件的状态上。
+const instState = new Map();
+let currentInstance = null;
 const effects = [];
+function beginInstance(fn) {
+  let rec = instState.get(fn);
+  if (!rec) { rec = { count: 0, instances: [] }; instState.set(fn, rec); }
+  const idx = rec.count++;
+  if (!rec.instances[idx]) rec.instances[idx] = { hookIdx: 0, slots: [] };
+  return rec.instances[idx];
+}
 const reactStub = {
   createElement(type, props, ...children) {
     const kids = children.length === 0 ? undefined : children.length === 1 ? children[0] : children;
     return { type, props: { ...(props || {}), children: kids } };
   },
   useState(init) {
-    const i = hookIndex;
-    hookIndex += 1;
-    if (hookSlots.length <= i) hookSlots.push(typeof init === 'function' ? init() : init);
-    return [hookSlots[i], (next) => { hookSlots[i] = typeof next === 'function' ? next(hookSlots[i]) : next; }];
+    const inst = currentInstance || { hookIdx: 0, slots: [] };
+    const i = inst.hookIdx;
+    inst.hookIdx += 1;
+    if (inst.slots.length <= i) inst.slots.push(typeof init === 'function' ? init() : init);
+    return [inst.slots[i], (next) => { inst.slots[i] = typeof next === 'function' ? next(inst.slots[i]) : next; }];
   },
   useEffect(fn) { effects.push(fn); },
   useMemo(fn) { return fn(); },
@@ -39,7 +49,13 @@ const reactStub = {
   memo(c) { return c; },
   Fragment: 'Fragment',
 };
-const resetHooks = () => { hookIndex = 0; };
+const resetHooks = () => {
+  for (const rec of instState.values()) {
+    rec.count = 0;
+    for (const inst of rec.instances) inst.hookIdx = 0;
+  }
+  currentInstance = null;
+};
 
 globalThis.window = { __ModuleLoader__: { load: (spec) => { globalThis.__spec = spec; } } };
 Object.defineProperty(globalThis, 'navigator', {
@@ -79,6 +95,10 @@ const STATUS_BODY = {
     { id: 'd-20261027-130951-65f8', title: '用一句话回答：1+1等于几？', createdAt: '2026-10-27T05:09:51.000Z', answerChars: 7 },
   ],
   effective: { placement: 'sidebar', composerDock: false },
+  presets: [
+    { id: 'review', title: '方案评审', titleEn: 'Review', hint: '找出会让它失败的问题', hintEn: 'Find what would break it', template: '你是严格的评审者。\n\n{prompt}' },
+    { id: 'compare', title: '方案对比', titleEn: 'Compare', hint: '按维度对比多个方案', hintEn: 'Compare options by dimension', template: '你是客观的比较者。\n\n{prompt}' },
+  ],
 };
 globalThis.fetch = (url) => Promise.resolve({
   ok: true, status: 200,
@@ -131,10 +151,13 @@ function serialize(node) {
   if (typeof node === 'string' || typeof node === 'number') return esc(node);
   if (Array.isArray(node)) return node.map(serialize).join('');
   if (typeof node === 'object' && typeof node.type === 'function') {
-    const saved = hookIndex;
-    const out = serialize(node.type(node.props || {}));
-    hookIndex = saved;
-    return out;
+    const saved = currentInstance;
+    currentInstance = beginInstance(node.type);
+    try {
+      return serialize(node.type(node.props || {}));
+    } finally {
+      currentInstance = saved;
+    }
   }
   const { type, props } = node;
   if (typeof type !== 'string') return serialize(props.children);
@@ -155,11 +178,16 @@ const tick = () => new Promise((r) => setTimeout(r, 25));
 
 /** 渲染一次并跑完 effect（用于让设置表单从 loading 走到 ready）。 */
 async function renderStable(comp, props, { expanded }) {
-  hookSlots.length = 0;
-  if (expanded) hookSlots.push(true, true); // 说明区 + 设置区两个 details
   resetHooks();
   effects.length = 0;
-  serialize(comp(props)); // 首帧：收集 effect
+  serialize(comp(props)); // 首帧：收集 effect，同时把组件实例建出来
+  if (expanded) {
+    // 把所有 Fold 实例的 open 状态置真（等价于用户手动展开每个折叠块）
+    for (const [fn, rec] of instState) {
+      if (fn.name !== 'Fold') continue;
+      for (const inst of rec.instances) if (inst.slots.length) inst.slots[0] = true;
+    }
+  }
   const pending = effects.splice(0);
   for (const fn of pending) { try { fn(); } catch (e) { /* ignore */ } }
   await tick();
@@ -167,7 +195,11 @@ async function renderStable(comp, props, { expanded }) {
   effects.length = 0;
   const html = serialize(comp(props));
   for (const fn of effects.splice(0)) { try { fn(); } catch (e) { /* ignore */ } }
-  return html;
+  await tick();
+  resetHooks();
+  effects.length = 0;
+  const html2 = serialize(comp(props));
+  return html2.length >= html.length ? html2 : html;
 }
 
 const ENVELOPE = {

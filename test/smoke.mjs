@@ -6,6 +6,7 @@
  *   node test/smoke.mjs read              只读：现读当前会话气泡
  *   node test/smoke.mjs discuss "问题"     写操作：真的发一条讨论（受护栏约束）
  *   node test/smoke.mjs attach "问题" /abs/file.md   写操作：带附件的讨论
+ *   node test/smoke.mjs preset <id> "问题"   写操作：套预设提示词框架的讨论
  *   node test/smoke.mjs guard             护栏：并发 busy + 频率上限
  *
  * 该脚本直接调用插件内部模块，等价于工具 execute 的主干路径。
@@ -24,10 +25,13 @@ import {
   saveDiscussion,
 } from '../lib/store.js';
 import { cleanAnswer, composePrompt } from '../lib/tools.js';
+import { applyPreset, findPreset, PRESET_IDS } from '../lib/presets.js';
 import { readFile } from 'node:fs/promises';
 
 const cfg = resolveConfig({});
 const guard = new Guard(cfg);
+/** preset 子命令下实际使用的预设 id（落盘时记进记录）。 */
+let value_preset = null;
 
 async function readEgo(resultFile, out) {
   try {
@@ -66,8 +70,18 @@ if (cmd === 'status') {
     script = buildProbeScript({ resultFile, spaceName: cfg.spaceName, url: cfg.url, navigate: false });
   } else if (cmd === 'read') {
     script = buildReadScript({ resultFile, spaceName: cfg.spaceName, url: cfg.url, limit: 3 });
-  } else if (cmd === 'discuss' || cmd === 'attach') {
-    const prompt = composePrompt({ prompt: arg ?? '' });
+  } else if (cmd === 'discuss' || cmd === 'attach' || cmd === 'preset') {
+    // preset 的参数顺序是 <presetId> "<问题>"，与 discuss 的 "<问题>" 不同。
+    const presetId = cmd === 'preset' ? arg : null;
+    const rawPrompt = cmd === 'preset' ? (arg2 ?? '') : (arg ?? '');
+    const preset = presetId ? findPreset(presetId) : null;
+    if (presetId && !preset) {
+      console.error(JSON.stringify({ ok: false, reason: 'unknown_preset', available: PRESET_IDS }));
+      process.exit(1);
+    }
+    // composePrompt 只负责拼 prompt + context；预设框架由 applyPreset 单独套上，
+    // 与工具侧（lib/tools.js）保持同一路径。
+    const prompt = applyPreset(preset, composePrompt({ prompt: rawPrompt }));
     if (!prompt) {
       console.error('usage: node test/smoke.mjs discuss "问题"');
       process.exit(1);
@@ -85,6 +99,7 @@ if (cmd === 'status') {
       sendTimeoutMs: cfg.sendTimeoutMs,
       attachments,
     });
+    if (cmd === 'preset') { value_preset = preset.id; }
   } else {
     console.error(`unknown command: ${cmd}`);
     process.exit(1);
@@ -105,12 +120,13 @@ if (cmd === 'status') {
     }, null, 1));
     process.exit(1);
   }
-  if ((cmd === 'discuss' || cmd === 'attach') && value.code === 'ok' && value.answer) {
+  if ((cmd === 'discuss' || cmd === 'attach' || cmd === 'preset') && value.code === 'ok' && value.answer) {
     value.answer = cleanAnswer(value.answer, cfg.maxAnswerChars);
     await saveDiscussion(cfg, {
       id,
-      title: String(arg).slice(0, 48),
-      prompt: composePrompt({ prompt: arg }),
+      title: String(cmd === 'preset' ? arg2 : arg).slice(0, 48),
+      prompt: cmd === 'preset' ? (arg2 ?? '') : (arg ?? ''),
+      preset: value_preset,
       answer: value.answer,
       url: value.url ?? null,
       createdAt: new Date().toISOString(),
