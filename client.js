@@ -1,5 +1,5 @@
 /**
- * dsh-web-ai-discuss — 客户端（浏览器侧）模块。v0.3.0（未发布开发版）
+ * dsh-web-ai-discuss — 客户端（浏览器侧）模块。v0.4.0（未发布开发版）
  *
  * 三块 UI：
  *   1. sidebar.panellist  侧边栏格子（图标）
@@ -29,7 +29,7 @@ window.__ModuleLoader__.load({
     const TOOL_DISCUSS = 'web_ai_discuss';
     const SETTINGS_API = '/web-ai-discuss/api/settings';
     // 构建戳：面板头部显示。看到它 = 浏览器在跑这版代码；看不到 = client 模块没装载。
-    const CLIENT_BUILD = '0.3.0';
+    const CLIENT_BUILD = '0.4.0';
 
     const isZh = () => {
       try {
@@ -192,47 +192,64 @@ window.__ModuleLoader__.load({
     /* @wai-css-start */
     const CSS = `
 .wai-root {
+  container-type: inline-size;
+  container-name: wai;
   height: 100%;
   overflow-y: auto;
-  padding: 20px 24px 32px;
+  padding: 22px 26px 36px;
   font: inherit;
   font-size: 13px;
-  line-height: 1.6;
-  color: var(--dsw-alias-text-primary, inherit);
+  line-height: 1.65;
+  color: var(--dsw-alias-label-primary, #1a1a1a);
   -webkit-font-smoothing: antialiased;
+  --wai-surface: var(--dsw-alias-bg-layer-1, transparent);
+  --wai-surface-strong: color-mix(in srgb, var(--dsw-alias-label-primary, #1a1a1a) 8%, transparent);
 }
 .wai-root * { box-sizing: border-box; }
-.wai-wrap { max-width: 72ch; }
+.wai-wrap { max-width: 68ch; }
 
-.wai-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 2px; }
+/* ── 头部 ── */
+.wai-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .wai-h1 {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
   text-wrap: balance;
 }
-.wai-sub {
-  font-size: 12px;
-  color: var(--dsw-alias-text-secondary, #6b6b6b);
+.wai-build {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: var(--dsw-alias-label-secondary, #61666b);
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.1));
   font-variant-numeric: tabular-nums;
 }
-
-.wai-lead { margin: 10px 0 0; font-size: 13px; line-height: 1.65; }
-.wai-note {
-  margin: 12px 0 0;
-  padding: 9px 12px;
-  border-radius: 8px;
-  font-size: 12.5px;
-  line-height: 1.6;
-  background: var(--dsw-alias-bg-secondary, rgba(127,127,127,0.09));
-  border: 1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.24));
-  color: var(--dsw-alias-text-primary, inherit);
+.wai-lead {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--dsw-alias-label-secondary, #61666b);
 }
 
+/* ── 何时调用（静默提示块）── */
+.wai-note {
+  margin: 16px 0 0;
+  padding: 11px 14px;
+  border-radius: var(--dsw-radius-md, 12px);
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+  background: var(--wai-surface);
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--dsw-alias-label-secondary, #61666b);
+}
+
+/* ── 折叠块 ── */
 .wai-fold {
-  margin: 18px 0 0;
-  border-top: 1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.24));
+  margin: 22px 0 0;
+  border-top: .5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
 }
 .wai-fold > summary {
   list-style: none;
@@ -240,139 +257,156 @@ window.__ModuleLoader__.load({
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 40px;
-  padding: 8px 0;
+  min-height: 44px;
+  padding: 9px 8px 9px 0;
+  margin: 0 -8px 0 0;
   font-size: 13px;
   font-weight: 600;
-  color: var(--dsw-alias-text-primary, inherit);
+  letter-spacing: -0.005em;
+  color: var(--dsw-alias-label-primary, #1a1a1a);
   user-select: none;
-  border-radius: 6px;
+  margin-bottom: 0;
+  border-radius: var(--dsw-radius-sm, 8px);
+  transition: color 120ms ease, background-color 120ms ease;
 }
+.wai-fold > summary:hover { color: var(--dsw-alias-label-secondary, #61666b); }
 .wai-fold > summary::-webkit-details-marker { display: none; }
 .wai-fold > summary::marker { content: ''; }
-.wai-fold > summary:hover .wai-caret { opacity: 1; }
 .wai-fold > summary:focus-visible {
-  outline: 2px solid var(--dsw-alias-accent, #4b7bec);
+  outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6);
   outline-offset: 2px;
 }
 .wai-caret {
   flex: none;
-  opacity: 0.62;
-  transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+  color: var(--dsw-alias-label-secondary, #61666b);
+  transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .wai-fold[open] > summary .wai-caret { transform: rotate(90deg); }
-.wai-fold-body { padding: 2px 0 6px; }
+.wai-fold-body { padding: 6px 0 12px; }
 
+/* ── 小节标题 ── */
 .wai-section-label {
-  margin: 16px 0 6px;
-  font-size: 12px;
+  margin: 20px 0 4px;
+  padding-top: 14px;
+  border-top: .5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+  font-size: 11.5px;
   font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--dsw-alias-text-secondary, #6b6b6b);
+  letter-spacing: 0.02em;
+  color: var(--dsw-alias-label-secondary, #61666b);
 }
-.wai-section-label:first-child { margin-top: 4px; }
+.wai-section-label:first-child { margin-top: 6px; padding-top: 0; border-top: 0; }
 
+/* ── 说明行（护栏 / 返回码）── */
 .wai-row {
   display: grid;
-  grid-template-columns: minmax(96px, max-content) minmax(0, 1fr);
-  gap: 6px 14px;
-  padding: 7px 0;
-  border-bottom: 1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.16));
+  grid-template-columns: minmax(78px, max-content) minmax(0, 1fr);
+  gap: 3px 16px;
+  padding: 6px 0;
+  align-items: baseline;
 }
-.wai-row:last-child { border-bottom: 0; }
-.wai-row-k { font-size: 12.5px; font-weight: 600; }
+.wai-row-k {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary, #61666b);
+}
 .wai-row-d {
   font-size: 12.5px;
-  line-height: 1.55;
-  color: var(--dsw-alias-text-secondary, #6b6b6b);
+  line-height: 1.65;
+  color: var(--dsw-alias-label-secondary, #61666b);
 }
 .wai-row-d code, .wai-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: 11.5px;
   padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--dsw-alias-bg-secondary, rgba(127,127,127,0.12));
-  color: var(--dsw-alias-text-primary, inherit);
-  white-space: nowrap;
+  border-radius: var(--dsw-radius-xs, 4px);
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.1));
+  color: var(--dsw-alias-label-primary, #1a1a1a);
 }
 
+/* ── 列表 ── */
 .wai-list { margin: 0; padding: 0; list-style: none; }
 .wai-list > li {
   position: relative;
-  padding: 5px 0 5px 14px;
+  padding: 5px 0 5px 15px;
   font-size: 12.5px;
-  line-height: 1.55;
-  color: var(--dsw-alias-text-secondary, #6b6b6b);
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary, #61666b);
 }
 .wai-list > li::before {
   content: '';
   position: absolute;
   left: 2px;
-  top: 13px;
+  top: 12px;
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: currentColor;
-  opacity: 0.55;
+  background: var(--dsw-alias-label-tertiary, #81858c);
 }
 
-.wai-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-
+/* ── 按钮 ── */
+.wai-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
 .wai-btn {
   font: inherit;
   font-size: 12.5px;
   line-height: 1.2;
   min-height: 30px;
   padding: 6px 12px;
-  border-radius: 7px;
+  border-radius: var(--dsw-radius-sm, 8px);
   cursor: pointer;
-  color: var(--dsw-alias-text-primary, inherit);
-  background: var(--dsw-alias-bg-secondary, rgba(127,127,127,0.1));
-  border: 1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.3));
-  transition: background-color 120ms ease, border-color 120ms ease, opacity 120ms ease;
+  color: var(--dsw-alias-label-primary, #1a1a1a);
+  background: transparent;
+  border: 1px solid var(--dsw-alias-border-l3, rgba(0, 0, 0, 0.12));
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
-.wai-btn:hover { background: var(--dsw-alias-bg-tertiary, rgba(127,127,127,0.18)); }
+.wai-btn:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.1));
+  border-color: var(--dsw-alias-border-l4, rgba(0, 0, 0, 0.16));
+}
 .wai-btn:active { transform: translateY(0.5px); }
 .wai-btn:focus-visible {
-  outline: 2px solid var(--dsw-alias-accent, #4b7bec);
+  outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6);
   outline-offset: 2px;
 }
-.wai-btn[disabled] {
-  cursor: default;
-  opacity: 0.5;
-  background: var(--dsw-alias-bg-secondary, rgba(127,127,127,0.1));
-}
+.wai-btn[disabled] { cursor: default; opacity: 0.5; }
 .wai-btn-primary {
-  background: var(--dsw-alias-accent, #4b7bec);
   border-color: transparent;
-  color: #fff;
+  color: var(--dsw-alias-label-deep-diving, #3261c4);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 12%, transparent);
   font-weight: 600;
 }
-.wai-btn-primary:hover { background: var(--dsw-alias-accent-hover, #3d6bd8); }
-/* 强调色不可控时，实心填充的白字在暗色主题容易掉到 4.5:1 以下；
-   有 color-mix 就改用同色系的淡底 + 强调色文字，两边主题都稳。 */
-@supports (background: color-mix(in srgb, red 10%, transparent)) {
+.wai-btn-primary:hover {
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 20%, transparent);
+  border-color: transparent;
+}
+@supports not (background: color-mix(in srgb, red 10%, transparent)) {
   .wai-btn-primary {
-    background: color-mix(in srgb, var(--dsw-alias-accent, #4b7bec) 14%, transparent);
-    border-color: color-mix(in srgb, var(--dsw-alias-accent, #4b7bec) 48%, transparent);
-    color: var(--dsw-alias-accent, #4b7bec);
+    background: #3261c4;
+    color: #fff;
   }
-  .wai-btn-primary:hover { background: color-mix(in srgb, var(--dsw-alias-accent, #4b7bec) 24%, transparent); }
 }
 
+.wai-btn-ghost {
+  border-color: transparent;
+  color: var(--dsw-alias-label-secondary, #61666b);
+  min-height: 26px;
+  padding: 4px 9px;
+  font-size: 12px;
+}
+.wai-btn-ghost:hover { color: var(--dsw-alias-label-primary, #1a1a1a); }
+
+/* ── 设置表单 ── */
 .wai-field {
   display: grid;
   grid-template-columns: minmax(120px, max-content) minmax(0, 170px) minmax(0, max-content);
   align-items: center;
-  gap: 10px;
-  padding: 5px 0;
+  gap: 12px;
+  padding: 6px 0;
   font-size: 12.5px;
 }
-.wai-field-label { color: var(--dsw-alias-text-primary, inherit); }
+.wai-field-label { color: var(--dsw-alias-label-primary, #1a1a1a); }
 .wai-field-hint {
-  font-size: 12px;
-  color: var(--dsw-alias-text-secondary, #6b6b6b);
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary, #61666b);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -381,55 +415,51 @@ window.__ModuleLoader__.load({
   font-size: 12.5px;
   width: 100%;
   min-height: 30px;
-  padding: 5px 8px;
-  border-radius: 6px;
-  color: var(--dsw-alias-text-primary, inherit);
-  background: var(--dsw-alias-bg-secondary, rgba(127,127,127,0.08));
-  border: 1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.3));
+  padding: 5px 9px;
+  border-radius: var(--dsw-radius-sm, 8px);
+  color: var(--dsw-alias-label-primary, #1a1a1a);
+  background: var(--dsw-alias-bg-layer-1, transparent);
+  border: 1px solid var(--dsw-alias-border-l3, rgba(0, 0, 0, 0.12));
   transition: border-color 120ms ease, background-color 120ms ease;
 }
-.wai-input:hover { border-color: var(--dsw-alias-border-strong, rgba(127,127,127,0.45)); }
+.wai-input:hover { border-color: var(--dsw-alias-border-l4, rgba(0, 0, 0, 0.16)); }
 .wai-input:focus-visible {
-  outline: 2px solid var(--dsw-alias-accent, #4b7bec);
+  outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6);
   outline-offset: 1px;
-  background: var(--dsw-alias-bg-primary, transparent);
 }
 .wai-input-wide { grid-column: 2 / -1; }
 .wai-check {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  min-height: 32px;
+  min-height: 30px;
   cursor: pointer;
 }
-.wai-check input { width: 16px; height: 16px; accent-color: var(--dsw-alias-accent, #4b7bec); cursor: pointer; }
-.wai-check input:focus-visible { outline: 2px solid var(--dsw-alias-accent, #4b7bec); outline-offset: 2px; }
-
-.wai-status {
-  margin-top: 10px;
-  font-size: 12px;
-  line-height: 1.5;
+.wai-check input { width: 15px; height: 15px; accent-color: var(--dsw-alias-state-business-primary, #4176e6); cursor: pointer; }
+.wai-check input:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6);
+  outline-offset: 2px;
 }
-.wai-status-ok { color: var(--dsw-alias-state-success, #128a4a); }
+.wai-status { margin-top: 10px; font-size: 12px; line-height: 1.5; }
+.wai-status-ok { color: var(--dsw-alias-state-success-primary, #22c55e); }
 .wai-status-error {
-  color: var(--dsw-alias-state-error, #c0392b);
+  color: var(--dsw-alias-state-error-primary, #ec1313);
   white-space: pre-wrap;
 }
 
-/* 运行状态块 */
+/* ── 运行状态卡 ── */
 .wai-live {
-  margin-top: 12px;
-  padding: 11px 13px;
-  border-radius: 10px;
-  border: 1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.26));
-  background: var(--dsw-alias-bg-secondary, rgba(127,127,127,0.06));
+  margin-top: 18px;
+  padding: 13px 15px 14px;
+  border-radius: var(--dsw-radius-lg, 16px);
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+  background: var(--wai-surface);
 }
 .wai-live-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   flex-wrap: wrap;
-  margin-bottom: 8px;
 }
 .wai-live-title { font-size: 12.5px; font-weight: 600; }
 .wai-live-dot {
@@ -437,36 +467,56 @@ window.__ModuleLoader__.load({
   height: 7px;
   border-radius: 999px;
   flex: none;
-  background: var(--dsw-alias-state-success, #128a4a);
+  background: var(--dsw-alias-state-success-primary, #22c55e);
 }
-.wai-live-dot[data-busy="true"] { background: var(--dsw-alias-state-warning, #b8860b); }
-.wai-live-dot[data-busy="error"] { background: var(--dsw-alias-state-error, #c0392b); }
-.wai-live-grid {
+.wai-live-dot[data-busy="true"] { background: var(--dsw-alias-state-warn-primary, #f59e0b); }
+.wai-live-dot[data-busy="error"] { background: var(--dsw-alias-state-error-primary, #ec1313); }
+.wai-live-state {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary, #61666b);
+}
+.wai-live-refresh { margin-left: auto; }
+
+.wai-stats {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
-  gap: 4px 12px;
-  align-items: baseline;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  gap: 12px 16px;
+  margin-top: 13px;
 }
-.wai-live-k { font-size: 12px; color: var(--dsw-alias-text-secondary, #6b6b6b); }
-.wai-live-v {
-  font-size: 12.5px;
+.wai-stat { min-width: 0; }
+.wai-stat-k {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary, #61666b);
+  white-space: nowrap;
+}
+.wai-stat-v {
+  margin-top: 1px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, #1a1a1a);
   font-variant-numeric: tabular-nums;
-  word-break: break-word;
+  letter-spacing: -0.01em;
+}
+.wai-live-meta {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: .5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary, #61666b);
+  font-variant-numeric: tabular-nums;
 }
 .wai-live-list { margin: 8px 0 0; padding: 0; list-style: none; }
 .wai-live-list li {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: baseline;
-  padding: 3px 0;
-  border-top: 1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.16));
+  padding: 4px 0;
   font-size: 12.5px;
 }
-.wai-live-list li:first-child { border-top: none; }
 .wai-live-id {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11.5px;
-  color: var(--dsw-alias-text-secondary, #6b6b6b);
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, #61666b);
   flex: none;
 }
 .wai-live-title-txt {
@@ -474,65 +524,144 @@ window.__ModuleLoader__.load({
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--dsw-alias-label-secondary, #61666b);
 }
 
+/* ── 预设提示词 ── */
+.wai-preset {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 14px;
+  row-gap: 2px;
+  align-items: start;
+  padding: 11px 0;
+  border-bottom: .5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+}
+.wai-preset:last-child { border-bottom: 0; }
+.wai-preset-head {
+  grid-column: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.wai-preset-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary, #61666b);
+  flex: none;
+}
+.wai-preset-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, #1a1a1a);
+}
+.wai-preset-hint {
+  grid-column: 1;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--dsw-alias-label-secondary, #61666b);
+}
+.wai-preset-action { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+
+/* ── 结果卡片 ── */
 .wai-card {
-  border: 1px solid var(--dsw-alias-border-primary, rgba(127,127,127,0.26));
-  border-radius: 10px;
-  padding: 11px 13px;
-  background: var(--dsw-alias-bg-primary, transparent);
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+  border-radius: var(--dsw-radius-lg, 16px);
+  padding: 12px 14px;
+  background: var(--wai-surface);
 }
 .wai-card + .wai-card { margin-top: 10px; }
-.wai-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wai-card-head { display: flex; flex-direction: column; gap: 6px; }
+.wai-card-titlerow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wai-card-metarow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.wai-card-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.wai-card-copy { margin-left: auto; min-height: 24px; padding: 2px 8px; font-size: 12px; }
 .wai-card-title { font-size: 12.5px; font-weight: 600; }
 .wai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: 11.5px;
   line-height: 1.4;
-  padding: 1px 6px;
+  padding: 1px 8px 1px 6px;
   border-radius: 999px;
-  border: 1px solid currentColor;
+  color: var(--dsw-alias-label-primary, #0f1115);
+  background: var(--wai-surface-strong);
+}
+.wai-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex: none;
+  background: currentColor;
 }
 .wai-card-body {
-  margin-top: 7px;
+  margin-top: 9px;
   font-size: 12.5px;
-  line-height: 1.65;
+  line-height: 1.7;
   white-space: pre-wrap;
   max-height: 320px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  color: var(--dsw-alias-label-primary, #1a1a1a);
 }
-.wai-muted { font-size: 12px; color: var(--dsw-alias-text-secondary, #6b6b6b); }
+.wai-muted { font-size: 12px; color: var(--dsw-alias-label-secondary, #61666b); }
+.wai-text {
+  margin: 0 0 2px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--dsw-alias-label-secondary, #61666b);
+}
 .wai-muted + .wai-muted { margin-top: 4px; }
 
-.wai-preset-d { display: flex; align-items: center; gap: 10px; }
-.wai-preset-hint { flex: 1; min-width: 0; }
-.wai-preset-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-
+/* ── 浏览器表面 ── */
 .wai-root ::selection, .wai-card ::selection {
-  background: var(--dsw-alias-accent, #4b7bec);
-  color: #fff;
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 22%, transparent);
 }
 .wai-root, .wai-card-body {
-  scrollbar-color: var(--dsw-alias-border-strong, rgba(127,127,127,0.5)) transparent;
   scrollbar-width: thin;
+  scrollbar-color: var(--dsw-alias-scrollbar-bg-l2, rgba(127, 127, 127, 0.3)) transparent;
 }
 .wai-root::-webkit-scrollbar, .wai-card-body::-webkit-scrollbar { width: 10px; height: 10px; }
 .wai-root::-webkit-scrollbar-thumb, .wai-card-body::-webkit-scrollbar-thumb {
-  background: var(--dsw-alias-border-primary, rgba(127,127,127,0.35));
+  background: var(--dsw-alias-scrollbar-bg-l2, rgba(127, 127, 127, 0.3));
   border-radius: 999px;
   border: 3px solid transparent;
   background-clip: content-box;
 }
+.wai-root::-webkit-scrollbar-thumb:hover, .wai-card-body::-webkit-scrollbar-thumb:hover {
+  background: var(--dsw-alias-scrollbar-hover-l2, rgba(127, 127, 127, 0.5));
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
 
-@media (max-width: 560px) {
+@container wai (max-width: 460px) {
   .wai-root { padding: 16px 16px 26px; }
   .wai-field { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .wai-input-wide { grid-column: 1 / -1; }
   .wai-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .wai-row-k { font-weight: 600; }
+  .wai-preset { grid-template-columns: minmax(0, 1fr); }
+  .wai-preset-action { grid-column: 1; grid-row: auto; justify-self: start; margin-top: 8px; }
+  .wai-stats { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 10px 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .wai-caret, .wai-btn, .wai-input { transition: none; }
+  .wai-caret, .wai-btn, .wai-input, .wai-fold > summary { transition: none; }
 }
 `;
     /* @wai-css-end */
@@ -554,6 +683,7 @@ window.__ModuleLoader__.load({
       const [open, setOpen] = React.useState(false);
       return h('details', {
         className: 'wai-fold',
+        open: open || undefined,
         onToggle: (e) => setOpen(!!e.currentTarget.open),
       },
         h('summary', null,
@@ -833,14 +963,14 @@ window.__ModuleLoader__.load({
 
     const codeTone = (code) => {
       switch (code) {
-        case 'ok': return 'var(--dsw-alias-state-success, #128a4a)';
+        case 'ok': return 'var(--dsw-alias-state-success-primary, #128a4a)';
         case 'busy':
-        case 'rate_limited': return 'var(--dsw-alias-state-warning, #a35c00)';
+        case 'rate_limited': return 'var(--dsw-alias-state-warn-label, #a35c00)';
         case 'unauthorized':
         case 'unavailable':
         case 'timeout':
-        case 'failed': return 'var(--dsw-alias-state-error, #c0392b)';
-        default: return 'var(--dsw-alias-text-secondary, #6b6b6b)';
+        case 'failed': return 'var(--dsw-alias-state-error-primary, #c0392b)';
+        default: return 'var(--dsw-alias-label-secondary, #61666b)';
       }
     };
 
@@ -910,31 +1040,31 @@ window.__ModuleLoader__.load({
 
       const attachList = value && Array.isArray(value.attachments) ? value.attachments : null;
 
+      // 两行头：标题+状态一行，元信息+操作一行（窄栏也不会挤乱）
       const head = h('div', { className: 'wai-card-head' },
-        h('span', { className: 'wai-card-title' }, T.panel),
-        code ? h('span', {
-          className: 'wai-badge',
-          style: { color: codeTone(code) },
-        }, code) : null,
-        pending ? h('span', { className: 'wai-muted' }, '进行中…') : null,
-        value && value.elapsedMs
-          ? h('span', { className: 'wai-field-hint' }, (value.elapsedMs / 1000).toFixed(1) + 's')
-          : null,
-        value && value.discussionId
-          ? h('span', {
-            className: 'wai-field-hint',
-            style: { marginLeft: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' },
-            title: 'discussionId（可传给 followUp 追问）',
-          }, String(value.discussionId))
-          : null,
-        answer
-          ? h('button', {
-            className: 'wai-btn',
-            style: { minHeight: 24, padding: '2px 8px', fontSize: 12, marginLeft: value && value.discussionId ? 0 : 'auto' },
-            onClick: copyAnswer,
-            title: '复制回答原文',
-          }, copied ? T.copied : T.copyAnswer)
-          : null);
+        h('div', { className: 'wai-card-titlerow' },
+          h('span', { className: 'wai-card-title' }, T.panel),
+          code ? h('span', { className: 'wai-badge' },
+            h('span', { className: 'wai-badge-dot', style: { color: codeTone(code) } }),
+            h('span', null, code)) : null,
+          pending ? h('span', { className: 'wai-muted' }, '进行中…') : null),
+        h('div', { className: 'wai-card-metarow' },
+          value && value.elapsedMs
+            ? h('span', { className: 'wai-field-hint' }, (value.elapsedMs / 1000).toFixed(1) + 's')
+            : null,
+          value && value.discussionId
+            ? h('span', {
+              className: 'wai-field-hint wai-card-id',
+              title: 'discussionId（可传给 followUp 追问）',
+            }, String(value.discussionId))
+            : null,
+          answer
+            ? h('button', {
+              className: 'wai-btn wai-btn-ghost wai-card-copy',
+              onClick: copyAnswer,
+              title: '复制回答原文',
+            }, copied ? T.copied : T.copyAnswer)
+            : null));
 
       if (!answer) {
         const reason = (value && value.reason) || (block && block.error && block.error.code) || null;
@@ -1005,7 +1135,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'wai-live-head' },
             h('span', { className: 'wai-live-dot', 'data-busy': 'error' }),
             h('span', { className: 'wai-live-title' }, T.liveTitle),
-            h('button', { className: 'wai-btn', style: { marginLeft: 'auto', minHeight: 26 }, onClick: load }, T.liveRefresh)),
+            h('button', { className: 'wai-btn wai-btn-ghost wai-live-refresh', onClick: load }, T.liveRefresh)),
           h('div', { className: 'wai-status-error' }, T.liveFail + ' (' + state.error + ')'));
       }
       if (state.loading && !state.data) {
@@ -1013,7 +1143,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'wai-live-head' },
             h('span', { className: 'wai-live-dot', 'data-busy': 'true' }),
             h('span', { className: 'wai-live-title' }, T.liveTitle)),
-          h('div', { className: 'wai-muted' }, T.liveLoading));
+          h('div', { className: 'wai-muted', style: { marginTop: 8 } }, T.liveLoading));
       }
       const d = state.data || {};
       const g = d.guardrails || {};
@@ -1023,24 +1153,23 @@ window.__ModuleLoader__.load({
       const quota = typeof g.windowUsed === 'number' && typeof g.windowLimit === 'number'
         ? g.windowUsed + ' / ' + g.windowLimit
         : '-';
+      const stat = (k, v, title) => h('div', { className: 'wai-stat', title: title || null },
+        h('div', { className: 'wai-stat-k' }, k),
+        h('div', { className: 'wai-stat-v' }, v));
       return h('div', { className: 'wai-live' },
         h('div', { className: 'wai-live-head' },
           h('span', { className: 'wai-live-dot', 'data-busy': busy ? 'true' : 'false' }),
           h('span', { className: 'wai-live-title' }, T.liveTitle),
-          h('span', { className: 'wai-muted' }, busy ? T.liveBusy : T.liveIdle),
-          h('button', { className: 'wai-btn', style: { marginLeft: 'auto', minHeight: 26 }, onClick: load }, T.liveRefresh)),
-        h('div', { className: 'wai-live-grid' },
-          h('span', { className: 'wai-live-k' }, T.liveQuota), h('span', { className: 'wai-live-v' }, quota),
-          h('span', { className: 'wai-live-k' }, T.liveSpace),
-          h('span', { className: 'wai-live-v' }, spaceHeld ? T.liveSpaceHeld : T.liveSpaceFree),
-          h('span', { className: 'wai-live-k' }, T.liveDiscussions),
-          h('span', { className: 'wai-live-v' },
-            String((d.storeStats && d.storeStats.discussions) || 0)),
-          h('span', { className: 'wai-live-k' }, 'total calls'),
-          h('span', { className: 'wai-live-v' },
-            String((typeof g.totalCalls === 'number' ? g.totalCalls : 0)
-              + ' / busy ' + (typeof g.rejectedBusy === 'number' ? g.rejectedBusy : 0)
-              + ' / rate ' + (typeof g.rejectedRate === 'number' ? g.rejectedRate : 0)))),
+          h('span', { className: 'wai-live-state' }, busy ? T.liveBusy : T.liveIdle),
+          h('button', { className: 'wai-btn wai-btn-ghost wai-live-refresh', onClick: load }, T.liveRefresh)),
+        h('div', { className: 'wai-stats' },
+          stat(T.liveQuota, quota),
+          stat(T.liveSpace, spaceHeld ? T.liveSpaceHeld : T.liveSpaceFree),
+          stat(T.liveDiscussions, String((d.storeStats && d.storeStats.discussions) || 0)),
+          stat('total calls', String(typeof g.totalCalls === 'number' ? g.totalCalls : 0))),
+        h('div', { className: 'wai-live-meta' },
+          'busy ' + (typeof g.rejectedBusy === 'number' ? g.rejectedBusy : 0)
+          + ' · rate ' + (typeof g.rejectedRate === 'number' ? g.rejectedRate : 0)),
         recent.length
           ? h('ul', { className: 'wai-live-list' },
             recent.map((r) => h('li', { key: r.id },
@@ -1087,14 +1216,13 @@ window.__ModuleLoader__.load({
       if (state.loading) return h('div', { className: 'wai-muted' }, T.liveLoading);
       if (!state.items.length) return h('div', { className: 'wai-muted' }, T.presetEmpty);
       return h('div', null,
-        h('div', { className: 'wai-muted', style: { marginBottom: 6 } }, T.presetHint),
-        h('div', null, state.items.map((item) => h('div', { className: 'wai-row', key: item.id },
-          h('span', { className: 'wai-row-k' },
+        h('div', { className: 'wai-muted', style: { marginBottom: 4 } }, T.presetHint),
+        h('div', null, state.items.map((item) => h('div', { className: 'wai-preset', key: item.id },
+          h('div', { className: 'wai-preset-head' },
             h('code', { className: 'wai-preset-id' }, item.id),
-            ' ',
-            item.title || item.id),
-          h('span', { className: 'wai-row-d wai-preset-d' },
-            h('span', { className: 'wai-preset-hint' }, item.hint || ''),
+            h('span', { className: 'wai-preset-name' }, item.title || item.id)),
+          h('div', { className: 'wai-preset-hint' }, item.hint || ''),
+          h('div', { className: 'wai-preset-action' },
             h('button', {
               className: 'wai-btn',
               onClick: () => copy(item),
@@ -1114,14 +1242,14 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'wai-wrap' },
         h('div', { className: 'wai-head' },
           h('h1', { className: 'wai-h1' }, T.title),
-          h('span', { className: 'wai-sub' }, `build ${CLIENT_BUILD}`)),
+          h('span', { className: 'wai-build' }, `build ${CLIENT_BUILD}`)),
         h('p', { className: 'wai-lead' }, T.lead),
         h('div', { className: 'wai-note' }, T.when),
         h(LiveStatus, {}),
         h('div', { className: 'wai-actions' },
           h('button', { className: 'wai-btn', onClick: copy }, copied ? T.copied : T.copy)),
         h(Fold, { title: T.usageTitle },
-          h('div', { className: 'wai-muted' }, T.store),
+          h('p', { className: 'wai-text' }, T.store),
           h('div', { className: 'wai-section-label' }, T.guardTitle),
           h('div', null, T.guards.map(([k, d]) => h('div', { className: 'wai-row', key: k },
             h('span', { className: 'wai-row-k' }, k),

@@ -144,7 +144,7 @@ const VOID = new Set(['input', 'img', 'br', 'hr', 'meta', 'link']);
 const RENAME = {
   defaultValue: 'value', defaultChecked: 'checked', className: 'class', htmlFor: 'for',
 };
-const SKIP = new Set(['children', 'key', 'ref', 'style']);
+const SKIP = new Set(['children', 'key', 'ref']);
 
 function serialize(node) {
   if (node === null || node === undefined || node === false) return '';
@@ -166,6 +166,7 @@ function serialize(node) {
     if (SKIP.has(k) || v === null || v === undefined || v === false) continue;
     if (k === 'style') { attrs.push(`style="${esc(cssOf(v))}"`); continue; }
     if (k === 'defaultChecked') { if (v) attrs.push('checked'); continue; }
+    if (k === 'open') { if (v === true) attrs.push('open'); continue; }
     if (k.startsWith('on') && typeof v === 'function') continue; // 事件处理器不进静态页
     attrs.push(`${RENAME[k] || k}="${esc(v)}"`);
   }
@@ -217,9 +218,30 @@ const cardOf = (value) => ({
 });
 
 function page({ dark, expanded, body }) {
+  // 与宿主 dsh-client-ui-theme 一致的真实令牌（明/暗各一套），避免截图与真实界面脱节。
   const tokens = dark
-    ? `--dsw-alias-text-primary:#e8e8e8;--dsw-alias-text-secondary:#a0a0a0;--dsw-alias-border-primary:rgba(255,255,255,0.15);--dsw-alias-border-strong:rgba(255,255,255,0.28);--dsw-alias-bg-primary:#181818;--dsw-alias-bg-secondary:rgba(255,255,255,0.08);--dsw-alias-bg-tertiary:rgba(255,255,255,0.14);--dsw-alias-accent:#5b8cff;--dsw-alias-accent-hover:#4b7bec;--dsw-alias-state-success:#57d68d;--dsw-alias-state-warning:#f0b429;--dsw-alias-state-error:#ff7b6b;`
-    : `--dsw-alias-text-primary:#1a1a1a;--dsw-alias-text-secondary:#6b6b6b;--dsw-alias-border-primary:rgba(0,0,0,0.14);--dsw-alias-border-strong:rgba(0,0,0,0.28);--dsw-alias-bg-primary:#ffffff;--dsw-alias-bg-secondary:rgba(0,0,0,0.05);--dsw-alias-bg-tertiary:rgba(0,0,0,0.1);--dsw-alias-accent:#2f6df6;--dsw-alias-accent-hover:#245ad6;--dsw-alias-state-success:#128a4a;--dsw-alias-state-warning:#a35c00;--dsw-alias-state-error:#c0392b;`;
+    ? [
+      '--dsw-alias-bg-base:#151517', '--dsw-alias-bg-layer-1:#232324', '--dsw-alias-bg-layer-2:#2c2c2e',
+      '--dsw-alias-label-primary:#f9fafb', '--dsw-alias-label-secondary:#cfd3d6', '--dsw-alias-label-tertiary:#adb2b8',
+      '--dsw-alias-label-caption:#81858c',
+      '--dsw-alias-border-l1:#ffffff0f', '--dsw-alias-border-l2:#ffffff1f', '--dsw-alias-border-l3:#ffffff29', '--dsw-alias-border-l4:#fff3',
+      '--dsw-alias-interactive-bg-hover:#ffffff14', '--dsw-alias-interactive-bg-hover-solid:#353638',
+      '--dsw-alias-state-success-primary:#22c55e', '--dsw-alias-state-error-primary:#f25a5a',
+      '--dsw-alias-state-warn-primary:#f59e0b', '--dsw-alias-state-business-primary:#7aaaff',
+      '--dsw-alias-scrollbar-bg-l2:#545557', '--dsw-alias-scrollbar-hover-l2:#65676b',
+      '--dsw-radius-xs:4px', '--dsw-radius-sm:8px', '--dsw-radius-md:12px', '--dsw-radius-lg:16px',
+    ].join(';')
+    : [
+      '--dsw-alias-bg-base:#fff', '--dsw-alias-bg-layer-1:#fff', '--dsw-alias-bg-layer-2:#fff',
+      '--dsw-alias-label-primary:#0f1115', '--dsw-alias-label-secondary:#61666b', '--dsw-alias-label-tertiary:#81858c',
+      '--dsw-alias-label-caption:#adb2b8',
+      '--dsw-alias-border-l1:#0000000a', '--dsw-alias-border-l2:#0000001a', '--dsw-alias-border-l3:#0000001f', '--dsw-alias-border-l4:#00000029',
+      '--dsw-alias-interactive-bg-hover:#2631480f', '--dsw-alias-interactive-bg-hover-solid:#f1f3f5',
+      '--dsw-alias-state-success-primary:#22c55e', '--dsw-alias-state-error-primary:#ec1313',
+      '--dsw-alias-state-warn-primary:#f59e0b', '--dsw-alias-state-business-primary:#4176e6',
+      '--dsw-alias-scrollbar-bg-l2:#e1e5ee', '--dsw-alias-scrollbar-hover-l2:#cfd3d6',
+      '--dsw-radius-xs:4px', '--dsw-radius-sm:8px', '--dsw-radius-md:12px', '--dsw-radius-lg:16px',
+    ].join(';');
 
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
@@ -228,17 +250,18 @@ function page({ dark, expanded, body }) {
   :root { ${tokens} }
   * { box-sizing: border-box; }
   body { margin:0; font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-         background: var(--dsw-alias-bg-primary); color: var(--dsw-alias-text-primary); }
+         background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
   .stage { display:flex; gap:24px; padding:24px; align-items:flex-start; flex-wrap:wrap; }
-  .frame { border-radius:12px; overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,0.16); border:1px solid var(--dsw-alias-border-primary); }
-  .frame.main { width:760px; height:900px; }
-  .frame.side { width:392px; height:900px; }
+  .frame { border-radius:12px; overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,0.16); border:1px solid var(--dsw-alias-border-l2); }
+  .frame.main { width:760px; }
+  .frame.side { width:392px; }
+  .frame.narrow { width:340px; }
   .frame .bar { font-size:11px; letter-spacing:.06em; text-transform:uppercase; padding:9px 14px;
-                color:var(--dsw-alias-text-secondary); border-bottom:1px solid var(--dsw-alias-border-primary); }
-  .scroll { height:calc(100% - 35px); overflow-y:auto; }
+                color:var(--dsw-alias-label-secondary); border-bottom:1px solid var(--dsw-alias-border-l2); }
+  .scroll { overflow-y:auto; }
   .frame.side .scroll { padding:16px; }
   .icons { display:flex; gap:10px; padding:14px 0 0; align-items:center; }
-  .icons .chip { border:1px solid var(--dsw-alias-border-primary); border-radius:8px; padding:8px; }
+  .icons .chip { border:1px solid var(--dsw-alias-border-l2); border-radius:8px; padding:8px; }
   ${CLIENT_CSS}
 </style></head>
 <body><div class="stage">${body}</div></body></html>`;
@@ -270,6 +293,7 @@ for (const [name, dark, panelHtml, _] of variants) {
       <div class="icons"><div class="chip">${iconActive}</div><div class="chip" style="opacity:.55">${iconIdle}</div></div>
     </div></div>`;
   const main = `<div class="frame main"><div class="bar">main 面板</div><div class="scroll">${panelHtml}</div></div>`;
-  await writeFile(path.join(OUT, `${name}.html`), page({ dark, expanded: name.includes('expanded'), body: main + side }), 'utf8');
+  const narrow = `<div class="frame narrow"><div class="bar">侧边栏 340px</div><div class="scroll">${panelHtml}</div></div>`;
+  await writeFile(path.join(OUT, `${name}.html`), page({ dark, expanded: name.includes('expanded'), body: main + narrow + side }), 'utf8');
 }
 console.log('wrote out/panel.html, panel-expanded.html, panel-dark.html, panel-dark-expanded.html');

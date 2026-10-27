@@ -173,24 +173,38 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
 
 设计约束（与宿主共存，不抢戏）：
 
-- 只用 `--dsw-alias-*` 主题 token，亮暗两套都实测过对比度（正文 ≥4.5:1，最小字号 12px）；
-- 交互状态（hover / focus-visible / active / disabled / 选中 / 滚动条）由注入的命名空间 CSS `.wai-*` 承担，不覆盖宿主选择器；
-- 首屏零网络：两个折叠区都懒挂载，`自定义设置` 展开才 fetch 一次，`formCache` 之后秒开；
+- **只用宿主真实主题 token**：颜色全部来自 `--dsw-alias-label-*` / `--dsw-alias-bg-layer-*` / `--dsw-alias-border-l*` / `--dsw-alias-state-*-primary` / `--dsw-alias-interactive-bg-hover` / `--dsw-radius-*`；
+  早期版本用的 `--dsw-alias-text-primary` / `bg-secondary` / `border-primary` / `accent` / `state-success` **在宿主里根本不存在**（`dsh-client-ui-theme` 只定义 `label-*` / `bg-layer-*` / `border-l*` / `state-*-primary`），导致面板完全不继承宿主主题；
+- 亮/暗两套主题都做过实测，`impeccable detect` 对渲染产物 **0 告警**（正文对比度 ≥4.5:1，最小字号 11.5px 仅用于等宽 id / 数字）；
+- **窄栏用容器查询而非媒体查询**：宿主面板按容器宽度布局（侧边栏 340px 也能用），`@container wai (max-width: 460px)` 负责单列化，媒体查询在宿主里不生效；
+- 交互状态（hover / focus-visible / active / disabled / 选中 / 滚动条 / 选区）由注入的命名空间 CSS `.wai-*` 承担，不覆盖宿主选择器；
+- 首屏零网络：三个折叠区都懒挂载，`自定义设置` 展开才 fetch 一次，`formCache` 之后秒开；
 - 输入框全部非受控，输入不触发 React 渲染；工具卡片 `React.memo` + `WeakMap` 缓存解析结果。
 
 > 看到面板头部的 `build` 戳 = 浏览器跑的是这版代码；看不到 = client 模块没装载（宿主重启后需 `Ctrl+R` 刷新页面，或插件被禁用）。
 
 ### 离线视觉验收
 
-本机 GUI 需要进程内 launch token，截图通道不可用，因此提供两条不能骗人的验证路径：
+本机 GUI 需要进程内 launch token，宿主内截图通道不可用；但本机有 Chrome，可以对离线渲染产物做**真实光栅截图**：
 
 ```bash
 node test/render.mjs     # 用真实组件函数渲染静态页到 out/panel*.html（含亮/暗、折叠/展开四种）
 node test/client.mjs     # 桩 React 加载真实 client.js：slot 注册、文案、渲染、位置切换 44 条断言
+
+# 真截图（headless Chrome）
+chrome --headless=new --disable-gpu --hide-scrollbars --window-size=1600,1400 \
+  --screenshot=out/shot.png "file:///<abs>/out/panel-expanded.html"
 ```
 
-`out/panel-expanded.html` 可直接用浏览器打开看完整表单；`test/render.mjs` 里的序列化器保留 SVG 的
-`viewBox` / `width` / `height`，否则图标会按浏览器默认 300×150 撑开把布局撑坏（踩过）。
+`test/render.mjs` 里的页面变量使用**宿主 `dsh-client-ui-theme` 的真实令牌值**（亮暗各一套），
+截图因此与宿主真实观感一致，而不是"插件自己的一套假主题"。
+
+已踩过的坑（都是真实缺陷，改 harness 而非绕过）：
+
+- 序列化器保留 SVG 的 `viewBox` / `width` / `height`，否则图标按浏览器默认 300×150 撑开把布局撑坏；
+- 序列化器**不能丢弃 `style`**，否则徽章状态色等内联样式在截图里全部丢失（一度让 `ok` 徽标显示成默认色）；
+- `open` 属性要单独处理（`details` 折叠块），只改 React state 不会在静态页里展开——否则"展开态"截图其实一直是关着的；
+- 页面容器要按内容高度渲染（不能写死 900px），否则展开态底部被裁掉、看不到预设区与设置表单。
 
 ## 自定义设置（GUI 可编辑，保存即生效）
 
@@ -273,6 +287,7 @@ node test/smoke.mjs status|probe|read|discuss "问题"   # 真实 ego 冒烟
 - **长会话连发同一问题的可靠性依赖 `newChat=true` 默认值**：`newChat=false` 沿用旧会话时，虚拟列表 + 重渲染抖动可能导致完成判定超时（发送本身已有多重确认兜底）；确需追问请配 `followUp`
 - `lib/hooks.js` 双出口（`webhookUrl` / `hooksFile`）是自定义扩展点：`discuss.ok` 事件推送 `{id,title,prompt,answer,elapsedMs,discussionId}`，钩子异常只进 `notify` 不影响返回码
 - 预设提示词是**提问框架**，不是答案模板：框架给的是回答结构，结论仍由网页版模型给；预设集不可在设置页增删（避免配置面膨胀）
+- 面板配色依赖宿主 `dsh-client-ui-theme` 提供的 `--dsw-alias-*` 令牌；宿主换主题体系时需要同步改 `client.js` 里的 CSS 变量名（CSS 里都写了 fallback 值，不会白屏，但会失去主题跟随）
 
 ## 文件结构
 

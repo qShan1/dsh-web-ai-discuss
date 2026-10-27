@@ -240,7 +240,7 @@ effects.length = 0;
 const panelTree = mainSlot.component({});
 const panelText = textOf(panelTree);
 check('面板：含定位说明', panelText.includes('外部讨论通道'), panelText.slice(0, 60));
-check('面板：含构建戳 0.3.0', panelText.includes('build 0.3.0'), panelText.slice(0, 140));
+check('面板：含构建戳 0.3.0', panelText.includes('build 0.4.0'), panelText.slice(0, 140));
 check('面板：含三个折叠标题', panelText.includes('用法与说明') && panelText.includes('预设提示词') && panelText.includes('自定义设置'), panelText.slice(0, 400));
 check('面板：折叠关闭时不渲染护栏/返回码明细',
   !panelText.includes('rate_limited') && fetchCalls.length === 0, { fetches: fetchCalls.length });
