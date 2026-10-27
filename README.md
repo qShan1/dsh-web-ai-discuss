@@ -183,6 +183,40 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
 
 > 看到面板头部的 `build` 戳 = 浏览器跑的是这版代码；看不到 = client 模块没装载（宿主重启后需 `Ctrl+R` 刷新页面，或插件被禁用）。
 
+### 样式注入：为什么必须「刷新」而不是「存在就跳过」
+
+宿主里的 `<style>` 是**常驻 DOM**，插件热重载（HMR）或重新装载时只更新 JSX，旧 `<style>` 仍在文档里。
+早期实现是「`document.getElementById(STYLE_ID)` 存在就 `return`」，于是 **CSS 被冻结在首次安装时的那一版**：
+
+> 实测症状：面板 JSX 已是 0.4.0（`build 0.4.0` 戳是新的），但宿主里挂着的 `<style>` 仍是 **0.1.0 时代的 CSS**
+> （8410 字符 / 63 条规则，含早已删除的 `.wai-sub` / `.wai-chip-card`），而当前 CSS 是 14296 字符 / 105 条规则。
+> 结果就是「文字层级和结构对，但所有边框、圆角、背景、网格布局全都没有」——看起来像 CSS 没加载，其实是**加载了旧版**。
+
+现在的 `ensureStyles()`（`client.js`）：
+
+1. 没有 `<style>` → 新建并挂到 `document.head`；
+2. 已有但内容不同 → **整段替换** `textContent`；
+3. 内容相同 → 不动（避免无谓重排）。
+
+同时给标签打上 `data-plugin` / `data-plugin-css`，让宿主按归属清理样式（与 `dsh-client-ui-schedule` 等宿主自带插件一致）。
+
+回归测试在 `test/styles.mjs`：预置一个**过期**的 `<style>`，断言 `apply()` 之后它被替换成当前 CSS；
+把实现改回旧的「存在就跳过」时该测试会失败（3/10 通过）。
+
+### 宿主内自诊断
+
+插件会把宿主里的真实 DOM/CSS 状态回报到宿主侧路由（`GET/POST /web-ai-discuss/api/diag`），
+用于「样式到底生效没有」这类只能量、不能猜的问题：
+
+- `styleTag`：本插件 `<style>` 是否存在、在不在 head、规则条数、`.wai-*` 规则数、归属标记；
+- `styleTags`：文档里全部 `<style>` 的清单（自己的 + 别人的前若干个），便于对比宿主插件的注入范式；
+- `place`：面板元素落在 `document` 还是 shadow root、父链、关键 `getComputedStyle` 值；
+- `probe`：**临时注入一个带 `.wai-*` 类名的探针节点**，直接量规则是否生效
+  （`.wai-stats` 的 `display:grid`、`.wai-build` 的 `border-radius:999px`、`.wai-list > li` 的 `list-style-type:none` 等）；
+- `vars`：宿主主题变量在这张文档里解析成什么值。
+
+上报时机：装载后 1.5s 一次；用 `MutationObserver` 等面板真正挂载后再补一次，之后收工（不长期空转）。
+
 ### 离线视觉验收
 
 本机 GUI 需要进程内 launch token，宿主内截图通道不可用；但本机有 Chrome，可以对离线渲染产物做**真实光栅截图**：
@@ -266,6 +300,7 @@ HTTP 契约（同源守卫，exact 路由 `/web-ai-discuss/api/settings`）：
 ```bash
 node test/cases.mjs    # 宿主侧契约与护栏，20/20
 node test/client.mjs   # 客户端注册与渲染（桩 React），44/44
+node test/styles.mjs   # 样式注入回归（过期 <style> 必须被替换），10/10
 node test/render.mjs   # 离线渲染 out/panel*.html（亮/暗 × 折叠/展开）
 node test/smoke.mjs status|probe|read|discuss "问题"   # 真实 ego 冒烟
 ```
@@ -273,6 +308,9 @@ node test/smoke.mjs status|probe|read|discuss "问题"   # 真实 ego 冒烟
 `test/cases.mjs` 用「把 egoPath 换成 node.exe + 一个名为 `nodejs` 的替身文件」的办法，让真实 `registerTools` 拿到可控的 ego 返回值，从而覆盖 unavailable / unauthorized / busy / rate_limited / timeout / failed 全部分支。覆盖的边界还有：路径穿越 id、ego 空间互斥、布尔字符串容错、附件路径校验（且校验失败不消耗配额）、等待间隔期间被取消后护栏是否归位、preset 合法套用与非法 id 拦截（同样不消耗配额）。
 
 > 桩 React 按**组件实例**存状态（真实 React 的语义）。早期版本按全局 hook 序号存，导致折叠块展开后新挂载的组件串到别的组件的状态槽上——那是测试桩的保真度问题，不是插件缺陷。
+
+`test/styles.mjs` 复现「宿主里挂着过期 `<style>`」这个真实缺陷：预置一个内容是 0.1.0 时代的样式标签，
+断言 `apply()` 之后它被替换成当前 CSS（并带上 `data-plugin` 归属标记）；把实现改回旧的「存在就跳过」时它会失败。
 
 ## 已知限制
 
@@ -288,6 +326,8 @@ node test/smoke.mjs status|probe|read|discuss "问题"   # 真实 ego 冒烟
 - `lib/hooks.js` 双出口（`webhookUrl` / `hooksFile`）是自定义扩展点：`discuss.ok` 事件推送 `{id,title,prompt,answer,elapsedMs,discussionId}`，钩子异常只进 `notify` 不影响返回码
 - 预设提示词是**提问框架**，不是答案模板：框架给的是回答结构，结论仍由网页版模型给；预设集不可在设置页增删（避免配置面膨胀）
 - 面板配色依赖宿主 `dsh-client-ui-theme` 提供的 `--dsw-alias-*` 令牌；宿主换主题体系时需要同步改 `client.js` 里的 CSS 变量名（CSS 里都写了 fallback 值，不会白屏，但会失去主题跟随）
+- 宿主里的 `<style>` 常驻 DOM，样式必须**按内容比对后替换**而不是「存在就跳过」；否则插件升级后界面会停在旧版样式（已修 + `test/styles.mjs` 回归）
+- 宿主内没有通用的「截图」通道；`/web-ai-discuss/api/diag` 的 `probe` 段用临时探针节点量「规则是否生效」，是当前唯一能在宿主里验证样式落地的方式
 
 ## 文件结构
 
@@ -307,5 +347,5 @@ dsh-web-ai-discuss/
   client.js             # 侧边栏图标 + 中央面板 + 运行状态块 + 预设块 + 工具卡片
   locale/{zh,en}.json   # Plugin Manager 展示元数据
   icon.svg              # 原创图标
-  test/                 # cases / client / render / smoke
+  test/                 # cases / client / styles / render / smoke
 ```

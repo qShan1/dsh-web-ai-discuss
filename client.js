@@ -1,5 +1,5 @@
 /**
- * dsh-web-ai-discuss — 客户端（浏览器侧）模块。v0.4.0（未发布开发版）
+ * dsh-web-ai-discuss — 客户端（浏览器侧）模块。v0.4.1（未发布开发版）
  *
  * 三块 UI：
  *   1. sidebar.panellist  侧边栏格子（图标）
@@ -29,7 +29,7 @@ window.__ModuleLoader__.load({
     const TOOL_DISCUSS = 'web_ai_discuss';
     const SETTINGS_API = '/web-ai-discuss/api/settings';
     // 构建戳：面板头部显示。看到它 = 浏览器在跑这版代码；看不到 = client 模块没装载。
-    const CLIENT_BUILD = '0.4.0';
+    const CLIENT_BUILD = '0.4.1';
 
     const isZh = () => {
       try {
@@ -673,15 +673,225 @@ window.__ModuleLoader__.load({
     /* @wai-css-end */
 
     const STYLE_ID = 'dsh-web-ai-discuss-styles';
+    /** 宿主按 data-plugin 标记样式归属；带上它，重载时宿主能正确清理。 */
+    const STYLE_PLUGIN = 'dsh-web-ai-discuss';
+    /**
+     * 注入/刷新本插件的样式表。
+     *
+     * 关键点：**不能只做「存在就跳过」**。
+     * 宿主里 <style> 是常驻 DOM，插件热重载（HMR）或重新装载时 JSX 会更新，
+     * 但旧 <style> 仍在文档里——于是出现「JS 是新版、样式还是旧版」的分裂。
+     * （实测：宿主里挂着 0.1.0 时代的 CSS，而 JSX 已是 0.4.0。）
+     * 所以这里每次都按内容比对后写入：内容相同则不动，不同则整段替换。
+     */
     function ensureStyles() {
       try {
         if (typeof document === 'undefined') return;
-        if (document.getElementById(STYLE_ID)) return;
-        const el = document.createElement('style');
-        el.id = STYLE_ID;
+        const el = document.getElementById(STYLE_ID);
+        if (!el) {
+          const tag = document.createElement('style');
+          tag.id = STYLE_ID;
+          tag.dataset.plugin = STYLE_PLUGIN;
+          tag.dataset.pluginCss = STYLE_ID;
+          tag.textContent = CSS;
+          document.head.appendChild(tag);
+          return;
+        }
+        if (el.textContent === CSS) {
+          if (el.getAttribute('data-plugin') !== STYLE_PLUGIN) {
+            el.dataset.plugin = STYLE_PLUGIN;
+            el.dataset.pluginCss = STYLE_ID;
+          }
+          return;
+        }
         el.textContent = CSS;
-        document.head.appendChild(el);
+        el.dataset.plugin = STYLE_PLUGIN;
+        el.dataset.pluginCss = STYLE_ID;
       } catch (e) { /* 非浏览器环境忽略 */ }
+    }
+
+    /**
+     * 一次性 DOM/CSS 诊断：把**宿主里的真实状态**回报到宿主侧路由。
+     * 用途：样式是否落地、规则是否被解析、面板是否落在 shadow root 里——
+     * 这些在浏览器外看不到，只能让在宿主里跑的代码自己量。
+     * 不抛错，任何一步失败只记进结果。
+     */
+    function collectDiag() {
+      const out = { at: new Date().toISOString(), build: CLIENT_BUILD };
+      try { out.url = String((globalThis.location && globalThis.location.href) || ''); } catch (e) { out.url = null; }
+      try { out.ua = String(navigator.userAgent || '').slice(0, 160); } catch (e) { out.ua = null; }
+
+      // 1) 自己的 <style> 在不在、规则解析出多少条
+      try {
+        const tag = document.getElementById(STYLE_ID);
+        const info = {
+          present: !!tag,
+          inHead: !!(tag && document.head && document.head.contains(tag)),
+          parent: tag && tag.parentNode ? tag.parentNode.nodeName : null,
+          attrPlugin: tag ? tag.getAttribute('data-plugin') : null,
+          attrPluginCss: tag ? tag.getAttribute('data-plugin-css') : null,
+          textLen: tag ? String(tag.textContent || '').length : 0,
+          rules: null,
+          ruleError: null,
+          waiRules: null,
+        };
+        if (tag) {
+          try {
+            const sheet = tag.sheet;
+            info.rules = sheet ? sheet.cssRules.length : -1;
+            if (sheet) {
+              let n = 0;
+              const sample = [];
+              for (const r of sheet.cssRules) {
+                const sel = r.selectorText || '';
+                if (sel.indexOf('.wai-') !== -1) { n += 1; if (sample.length < 8) sample.push(sel.slice(0, 80)); }
+              }
+              info.waiRules = n;
+              info.waiRuleSample = sample;
+            }
+          } catch (e) { info.ruleError = String((e && e.name) || '') + ':' + String((e && e.message) || e); }
+        }
+        out.styleTag = info;
+      } catch (e) { out.styleTagError = String((e && e.message) || e); }
+
+      // 2) 宿主里一共有哪些 style 标签（别人的 vs 我们的）
+      try {
+        const tags = document.querySelectorAll('style');
+        const mine = [];
+        const others = [];
+        for (let i = 0; i < tags.length; i += 1) {
+          const t = tags[i];
+          const rec = {
+            id: t.id || null,
+            plugin: t.getAttribute('data-plugin'),
+            pluginCss: t.getAttribute('data-plugin-css'),
+            len: String(t.textContent || '').length,
+            rules: null,
+          };
+          try { rec.rules = t.sheet ? t.sheet.cssRules.length : -1; } catch (e) { rec.rules = 'err'; }
+          if (t.id === STYLE_ID) mine.push(rec);
+          else if (others.length < 12) others.push(rec);
+        }
+        out.styleTags = { total: tags.length, mine, others };
+      } catch (e) { out.styleTagsError = String((e && e.message) || e); }
+
+      // 3) 面板元素真实落在哪：document 还是 shadow root？规则是否命中？
+      try {
+        // 深搜：宿主可能把面板渲染在 shadow root 里，普通 querySelector 找不到。
+        const deepFind = (selector) => {
+          const direct = document.querySelector(selector);
+          if (direct) return direct;
+          const hosts = document.querySelectorAll('*');
+          for (let i = 0; i < hosts.length; i += 1) {
+            const sr = hosts[i].shadowRoot;
+            if (!sr) continue;
+            const hit = sr.querySelector(selector);
+            if (hit) return hit;
+          }
+          return null;
+        };
+        const root = deepFind('.wai-root');
+        const stats = deepFind('.wai-stats');
+        const build = deepFind('.wai-build');
+        const el = root || stats || build;
+        const place = {
+          foundRoot: !!root,
+          foundStats: !!stats,
+          foundBuild: !!build,
+          inDocument: !!(el && el.ownerDocument === document),
+          rootNodeType: el ? String(el.getRootNode && el.getRootNode() ? (el.getRootNode() === document ? 'document' : (el.getRootNode().nodeName || 'other')) : 'unknown') : null,
+          inShadow: !!(el && el.getRootNode && el.getRootNode() && el.getRootNode() !== document && el.getRootNode().host),
+          parentChain: null,
+          computed: null,
+        };
+        try {
+          const chain = [];
+          let p = el;
+          while (p && chain.length < 8) { chain.push(p.nodeName + (p.id ? '#' + p.id : '') + (p.className && typeof p.className === 'string' ? '.' + p.className.trim().split(/\s+/).join('.') : '')); p = p.parentNode; }
+          place.parentChain = chain;
+        } catch (e) { /* ignore */ }
+        try {
+          if (stats) {
+            const cs = getComputedStyle(stats);
+            place.computed = {
+              statsDisplay: cs.display,
+              statsColumns: cs.gridTemplateColumns,
+              statsGap: cs.gap,
+            };
+          }
+          if (build) {
+            const cs = getComputedStyle(build);
+            place.computed = Object.assign(place.computed || {}, {
+              buildDisplay: cs.display,
+              buildRadius: cs.borderRadius,
+              buildBg: cs.backgroundColor,
+            });
+          }
+        } catch (e) { place.computedError = String((e && e.message) || e); }
+        out.place = place;
+      } catch (e) { out.placeError = String((e && e.message) || e); }
+
+      // 3b) 探针：面板是「点开才渲染」的，首帧往往不存在，
+      // 所以自己造一个带插件类名的临时节点，量「样式规则到底生效没有」。
+      // 这比等面板打开更可靠，也不打扰用户。
+      try {
+        const probe = document.createElement('div');
+        probe.setAttribute('data-wai-probe', '1');
+        probe.style.position = 'fixed';
+        probe.style.left = '-9999px';
+        probe.style.top = '0';
+        probe.style.width = '360px';
+        probe.innerHTML = '<div class="wai-root"><div class="wai-head"><span class="wai-build">build 0.0.0</span></div>'
+          + '<div class="wai-stats"><div class="wai-stat"><div class="wai-stat-k">k</div><div class="wai-stat-v">v</div></div></div>'
+          + '<div class="wai-note">n</div><button class="wai-btn">b</button><ul class="wai-list"><li>i</li></ul></div>';
+        document.body.appendChild(probe);
+        const pStats = probe.querySelector('.wai-stats');
+        const pBuild = probe.querySelector('.wai-build');
+        const pNote = probe.querySelector('.wai-note');
+        const pBtn = probe.querySelector('.wai-btn');
+        const pLi = probe.querySelector('.wai-list > li');
+        const px = (el, keys) => {
+          if (!el) return null;
+          const cs = getComputedStyle(el);
+          const o = {};
+          for (const k of keys) o[k] = cs.getPropertyValue(k);
+          return o;
+        };
+        out.probe = {
+          applied: px(pStats, ['display', 'grid-template-columns', 'gap']),
+          build: px(pBuild, ['display', 'border-radius', 'background-color', 'padding-left']),
+          note: px(pNote, ['border-top-width', 'border-radius', 'background-color', 'padding-left']),
+          btn: px(pBtn, ['border-radius', 'padding-left', 'background-color', 'color']),
+          li: px(pLi, ['list-style-type', 'padding-left']),
+        };
+        probe.remove();
+      } catch (e) { out.probeError = String((e && e.message) || e); }
+
+      // 4) 宿主主题变量在这张文档里解析成什么
+      try {
+        const cs = getComputedStyle(document.documentElement);
+        const vars = {};
+        for (const name of ['--dsw-alias-label-primary', '--dsw-alias-label-secondary', '--dsw-alias-label-tertiary', '--dsw-alias-bg-layer-1', '--dsw-alias-border-l1', '--dsw-alias-state-business-primary', '--dsw-radius-lg', '--dsw-focus-ring-color']) {
+          vars[name] = String(cs.getPropertyValue(name) || '').trim();
+        }
+        out.vars = vars;
+        out.bodyAttrs = document.body ? Array.from(document.body.attributes).map((a) => a.name + '=' + a.value).slice(0, 12) : [];
+      } catch (e) { out.varsError = String((e && e.message) || e); }
+
+      return out;
+    }
+
+    /** 把诊断结果 POST 回宿主侧（宿主进程内存里存一份，供外部读取）。 */
+    function reportDiag() {
+      try {
+        const payload = collectDiag();
+        fetch('/web-ai-discuss/api/diag', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        }).catch(() => {});
+      } catch (e) { /* ignore */ }
+      return payload;
     }
 
     /** 折叠块（纯 DOM 行为）。说明区也走懒挂载：首屏只渲染标题与摘要。 */
@@ -1357,6 +1567,32 @@ window.__ModuleLoader__.load({
         }
       };
       mount();
+
+      // 一次性自诊断：把宿主里的真实 DOM/CSS 状态回报给宿主侧路由。
+      // 排障用：样式是否落地、规则是否解析、面板是否在 shadow root 里。
+      // 报告时机：装载后 1.5s 一次；等面板真正挂载（用户点开）再补一次，之后收工。
+      // 用 MutationObserver 等挂载，而不是轮询——面板是懒渲染的，
+      // 轮询既慢又长期空转。
+      let diagDone = false;
+      const diagOnce = () => {
+        if (diagDone) return;
+        diagDone = true;
+        try { reportDiag(); } catch (e) { /* ignore */ }
+      };
+      setTimeout(diagOnce, 1500);
+      if (typeof MutationObserver === 'function' && typeof document !== 'undefined' && document.body) {
+        try {
+          const observer = new MutationObserver(() => {
+            let hit = null;
+            try { hit = document.querySelector('.wai-root'); } catch (e) { hit = null; }
+            if (hit) {
+              try { observer.disconnect(); } catch (e) { /* ignore */ }
+              diagOnce();
+            }
+          });
+          observer.observe(document.body, { childList: true, subtree: true });
+        } catch (e) { /* ignore */ }
+      }
 
       // 拉生效配置，位置变了就重挂。
       // 为什么不只靠设置表单的 uiReload：设置也可以从命令行/API 直改（curl POST /api/settings），

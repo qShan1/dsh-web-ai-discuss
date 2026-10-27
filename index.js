@@ -143,6 +143,8 @@ export function apply(ctx, config) {
     const host = hostCtx;
     const base = '/web-ai-discuss/api';
     const disposers = [];
+    /** 客户端上报的最近一次 DOM/CSS 诊断（宿主进程内存，仅本地可读）。 */
+    let lastDiag = null;
 
     const routes = [
       {
@@ -173,6 +175,32 @@ export function apply(ctx, config) {
               presets: presetCatalog(),
               effective: effectiveOf(cfg),
             });
+          } catch (error) {
+            sendJson(response, 500, { ok: false, error: String(error?.message ?? error) });
+          }
+        },
+      },
+      {
+        kind: 'exact',
+        path: `${base}/diag`,
+        handler: async (request, response) => {
+          try {
+            if (request.method === 'GET') {
+              sendJson(response, 200, { ok: true, diag: lastDiag });
+              return;
+            }
+            if (request.method === 'POST') {
+              if (!sameOrigin(request)) {
+                sendJson(response, 403, { ok: false, error: 'cross_origin_refused' });
+                return;
+              }
+              const input = await readJsonBody(request);
+              lastDiag = { receivedAt: new Date().toISOString(), report: input };
+              sendJson(response, 200, { ok: true });
+              return;
+            }
+            response.writeHead(405, { allow: 'GET, POST' });
+            response.end();
           } catch (error) {
             sendJson(response, 500, { ok: false, error: String(error?.message ?? error) });
           }
