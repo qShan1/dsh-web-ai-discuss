@@ -191,7 +191,7 @@ effects.length = 0;
 const panelTree = mainSlot.component({});
 const panelText = textOf(panelTree);
 check('面板：含定位说明', panelText.includes('外部讨论通道'), panelText.slice(0, 60));
-check('面板：含构建戳 0.1.0', panelText.includes('build 0.1.0'), panelText.slice(0, 140));
+check('面板：含构建戳 0.2.0', panelText.includes('build 0.2.0'), panelText.slice(0, 140));
 check('面板：含两个折叠标题', panelText.includes('用法与说明') && panelText.includes('自定义设置'), panelText.slice(0, 400));
 check('面板：折叠关闭时不渲染护栏/返回码明细',
   !panelText.includes('rate_limited') && fetchCalls.length === 0, { fetches: fetchCalls.length });
@@ -267,6 +267,30 @@ const okTree2 = view.component({ phase: 'result', block: okBlock, sessionId: 'S-
 textOf(okTree2);
 effects[0]();
 check('卡片：同一会话不重复切换面板', selectedPanels.length === 1, selectedPanels.length);
+
+// 工具卡片：带附件
+const attachEnvelope = {
+  tool: 'web_ai_discuss',
+  code: 'ok',
+  reason: null,
+  message: null,
+  at: '2026-10-27T05:40:00.000Z',
+  sessionKey: 'S-9',
+  answer: '附件说了一个标题。',
+  answerChars: 9,
+  discussionId: 'd-20261027-134000-abcd',
+  attachments: ['C:/tmp/report.pdf', 'C:/tmp/notes.md'],
+};
+const attachBlock = {
+  kind: 'tool-result',
+  callId: 'c9',
+  name: 'web_ai_discuss',
+  content: [{ type: 'text', text: JSON.stringify(attachEnvelope, null, 1) }],
+  isError: false,
+  subCalls: [],
+};
+const attachText = textOf(view.component({ phase: 'result', block: attachBlock, sessionId: 'S-9' }));
+check('卡片(附件)：显示附件文件名', attachText.includes('report.pdf') && attachText.includes('notes.md'), attachText);
 
 // 工具卡片：unauthorized（且不出现登录话术）
 const unEnvelope = {

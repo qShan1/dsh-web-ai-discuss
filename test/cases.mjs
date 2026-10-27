@@ -314,6 +314,60 @@ const cases = [
     }
   }),
 
+  record('附件路径不合法 → invalid，且不消耗讨论配额', async () => {
+    const h = await makeHarness({ mode: 'ok' });
+    try {
+      const discuss = h.tools.get('web_ai_discuss');
+      const before = h.guard.snapshot().totalCalls;
+      for (const bad of [
+        ['relative.txt'],
+        [path.join(tmpdir(), 'definitely-missing-file-xyz.txt')],
+        ['   '],
+      ]) {
+        const value = await discuss.execute({ prompt: '在吗', attachments: bad }, h.exec);
+        assert.equal(value.code, 'invalid', `attachments=${JSON.stringify(bad)} 应为 invalid`);
+      }
+      assert.equal(h.guard.snapshot().totalCalls, before, '校验失败不应计入配额');
+      return 'path validation before guard';
+    } finally {
+      h.restore();
+    }
+  }),
+
+  record('附件过多 → invalid（上限 5 个）', async () => {
+    const h = await makeHarness({ mode: 'ok' });
+    try {
+      const value = await h.tools.get('web_ai_discuss').execute(
+        { prompt: '在吗', attachments: ['a', 'b', 'c', 'd', 'e', 'f'] },
+        h.exec,
+      );
+      assert.equal(value.code, 'invalid');
+      assert.equal(value.reason, 'too_many_attachments');
+      return value.reason;
+    } finally {
+      h.restore();
+    }
+  }),
+
+  record('附件合法 → 传给 ego 脚本并写入落盘记录', async () => {
+    const h = await makeHarness({ mode: 'ok' });
+    try {
+      const file = path.join(h.root, 'note.md');
+      await writeFile(file, '# hi\n', 'utf8');
+      const value = await h.tools.get('web_ai_discuss').execute(
+        { prompt: '看看这个附件', attachments: [file] },
+        h.exec,
+      );
+      assert.equal(value.code, 'ok');
+      assert.deepEqual(value.attachments, [file.replace(/\\/g, '/')]);
+      const back = await h.tools.get('web_ai_read_discussion').execute({ id: value.discussionId }, h.exec);
+      assert.equal(back.code, 'ok');
+      return `attachments=${value.attachments.length}`;
+    } finally {
+      h.restore();
+    }
+  }),
+
   record('等待间隔期间被取消 → 护栏不卡死（busy 归零）', async () => {
     const h = await makeHarness({ mode: 'ok' });
     try {

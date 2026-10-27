@@ -5,6 +5,7 @@
  *   node test/smoke.mjs probe             只读：打开/检查 ego 空间
  *   node test/smoke.mjs read              只读：现读当前会话气泡
  *   node test/smoke.mjs discuss "问题"     写操作：真的发一条讨论（受护栏约束）
+ *   node test/smoke.mjs attach "问题" /abs/file.md   写操作：带附件的讨论
  *   node test/smoke.mjs guard             护栏：并发 busy + 频率上限
  *
  * 该脚本直接调用插件内部模块，等价于工具 execute 的主干路径。
@@ -37,7 +38,7 @@ async function readEgo(resultFile, out) {
   }
 }
 
-const [, , cmd = 'status', arg] = process.argv;
+const [, , cmd = 'status', arg, arg2] = process.argv;
 
 if (cmd === 'status') {
   const ego = resolveEgoPath(cfg);
@@ -65,12 +66,13 @@ if (cmd === 'status') {
     script = buildProbeScript({ resultFile, spaceName: cfg.spaceName, url: cfg.url, navigate: false });
   } else if (cmd === 'read') {
     script = buildReadScript({ resultFile, spaceName: cfg.spaceName, url: cfg.url, limit: 3 });
-  } else if (cmd === 'discuss') {
+  } else if (cmd === 'discuss' || cmd === 'attach') {
     const prompt = composePrompt({ prompt: arg ?? '' });
     if (!prompt) {
       console.error('usage: node test/smoke.mjs discuss "问题"');
       process.exit(1);
     }
+    const attachments = cmd === 'attach' ? (arg2 ? [arg2] : []) : [];
     script = buildDiscussScript({
       resultFile,
       spaceName: cfg.spaceName,
@@ -81,6 +83,7 @@ if (cmd === 'status') {
       pollMs: cfg.pollMs,
       stableSamples: cfg.stableSamples,
       sendTimeoutMs: cfg.sendTimeoutMs,
+      attachments,
     });
   } else {
     console.error(`unknown command: ${cmd}`);
@@ -102,7 +105,7 @@ if (cmd === 'status') {
     }, null, 1));
     process.exit(1);
   }
-  if (cmd === 'discuss' && value.code === 'ok' && value.answer) {
+  if ((cmd === 'discuss' || cmd === 'attach') && value.code === 'ok' && value.answer) {
     value.answer = cleanAnswer(value.answer, cfg.maxAnswerChars);
     await saveDiscussion(cfg, {
       id,
@@ -112,6 +115,7 @@ if (cmd === 'status') {
       url: value.url ?? null,
       createdAt: new Date().toISOString(),
       elapsedMs: value.elapsedMs ?? null,
+      attachments: cmd === 'attach' && arg2 ? [arg2] : [],
     });
     value.storedAs = id;
     value.stored = await getDiscussion(cfg, id);

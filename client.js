@@ -1,5 +1,5 @@
 /**
- * dsh-web-ai-discuss — 客户端（浏览器侧）模块。v0.1.0（未发布开发版）
+ * dsh-web-ai-discuss — 客户端（浏览器侧）模块。v0.2.0（未发布开发版）
  *
  * 三块 UI：
  *   1. sidebar.panellist  侧边栏格子（图标）
@@ -31,7 +31,7 @@ window.__ModuleLoader__.load({
     const TOOL_STATUS = 'web_ai_status';
     const SETTINGS_API = '/web-ai-discuss/api/settings';
     // 构建戳：面板头部显示。看到它 = 浏览器在跑这版代码；看不到 = client 模块没装载。
-    const CLIENT_BUILD = '0.1.0';
+    const CLIENT_BUILD = '0.2.0';
 
     const isZh = () => {
       try {
@@ -899,6 +899,8 @@ window.__ModuleLoader__.load({
         } catch (e) { /* ignore */ }
       };
 
+      const attachList = value && Array.isArray(value.attachments) ? value.attachments : null;
+
       const head = h('div', { className: 'wai-card-head' },
         h('span', { className: 'wai-card-title' }, T.panel),
         code ? h('span', {
@@ -937,6 +939,10 @@ window.__ModuleLoader__.load({
             ? h('div', { className: 'wai-muted', style: { marginTop: 6 } }, T.empty) : null);
       }
       return h('div', { className: 'wai-card' }, head,
+        attachList
+          ? h('div', { className: 'wai-muted', style: { marginTop: 6 } },
+            '附件：' + attachList.map((p) => String(p).split(/[\\/]/).pop()).join('、'))
+          : null,
         h('div', { className: 'wai-card-body' }, String(answer)));
     });
 
@@ -954,6 +960,36 @@ window.__ModuleLoader__.load({
           .catch((e) => setState({ loading: false, data: null, error: String(e && e.message ? e.message : e) }));
       }, []);
       React.useEffect(() => { load(); }, [load]);
+      // 自动刷新：面板开着时每 5 秒读一次运行时状态；页面不可见时停掉，回来再读。
+      React.useEffect(() => {
+        let timer = null;
+        const start = () => {
+          if (timer !== null) return;
+          timer = setInterval(() => {
+            try { if (typeof document === 'undefined' || !document.hidden) load(); } catch (e) { /* ignore */ }
+          }, 5000);
+          // Node（离线测试）下 unref，避免没有清理时挂住进程；浏览器里没有 unref。
+          try { if (timer && typeof timer.unref === 'function') timer.unref(); } catch (e) { /* ignore */ }
+        };
+        const stop = () => {
+          if (timer !== null) { clearInterval(timer); timer = null; }
+        };
+        start();
+        const onVisible = () => { if (typeof document === 'undefined' || !document.hidden) { load(); start(); } else { stop(); } };
+        try {
+          if (typeof document !== 'undefined' && document.addEventListener) {
+            document.addEventListener('visibilitychange', onVisible);
+          }
+        } catch (e) { /* ignore */ }
+        return () => {
+          stop();
+          try {
+            if (typeof document !== 'undefined' && document.removeEventListener) {
+              document.removeEventListener('visibilitychange', onVisible);
+            }
+          } catch (e) { /* ignore */ }
+        };
+      }, [load]);
 
       if (state.error) {
         return h('div', { className: 'wai-live' },
@@ -1126,7 +1162,9 @@ window.__ModuleLoader__.load({
       };
       mount();
 
-      // 拉一次生效配置，位置变了就重挂。不做轮询：SettingsForm 保存成功后经 uiReload 通知。
+      // 拉生效配置，位置变了就重挂。
+      // 为什么不只靠设置表单的 uiReload：设置也可以从命令行/API 直改（curl POST /api/settings），
+      // 那条路不会触发表单回调。这里做**低频轮询**兜底，让入口位置最终与宿主配置一致。
       if (typeof globalThis.fetch === 'function') {
         const load = () => {
           fetch(SETTINGS_API, { cache: 'no-store' })
@@ -1150,9 +1188,15 @@ window.__ModuleLoader__.load({
         };
         uiReload = load;
         load();
+        // 兜底轮询：10s 一次，页面不可见时不发请求。
+        try {
+          const timer = setInterval(() => {
+            try { if (typeof document === 'undefined' || !document.hidden) load(); } catch (e) { /* ignore */ }
+          }, 10000);
+          if (typeof timer === 'object' && typeof timer.unref === 'function') timer.unref();
+        } catch (e) { /* ignore */ }
       }
     }
-
     return {
       inject: ['slots', 'layout'],
       apply,

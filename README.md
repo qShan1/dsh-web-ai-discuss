@@ -57,9 +57,21 @@ plugin_manager({ action: 'install_bundle', target: '<绝对路径>/dsh-web-ai-di
 | `context` | string | 附在提问后的补充上下文 |
 | `newChat` | boolean | 默认 `true`（推荐）：先回新会话，气泡从零开始，发送/完成判定最可靠；显式 `false` 沿用当前网页会话 |
 | `followUp` | string | 历史讨论 id（`d-YYYYMMDD-...`），自动把那条问答折进 context——默认新会话下携带上文的主通道 |
+| `attachments` | string[] | 要一并上传给网页版的附件**绝对路径**（最多 5 个） |
 | `timeoutMs` | integer | 30000–600000，默认取配置 |
 
-返回字段：`tool` `code` `reason` `message` `at` `sessionKey`，以及按分支出现的 `answer` `answerChars` `discussionId` `polls` `elapsedMs` `bubblesBefore` `bubblesAfter` `guardrails` `handoff` `retryAfterMs` `partial`。
+返回字段：`tool` `code` `reason` `message` `at` `sessionKey`，以及按分支出现的 `answer` `answerChars` `discussionId` `polls` `elapsedMs` `bubblesBefore` `bubblesAfter` `guardrails` `handoff` `retryAfterMs` `partial` `attachments`。
+
+### 附件上传
+
+`attachments` 里的文件会通过网页端的上传控件交给 DeepSeek 自己读——插件不读文件内容，
+只是把它塞进网页的 `input[type=file]`，等附件 chip 出现（文件名出现在输入框上方）才算上传完成。
+
+- 必须是**绝对路径**的普通文件；相对路径、文件不存在、目录、超过 20MB 一律 `code=invalid`
+- 路径校验发生在**护栏取票之前**——写错路径不会白白消耗一次讨论配额
+- 上传没成功（网页端没有文件控件、chip 没出现）→ `code=failed`，`reason` 为
+  `attachment_upload_failed` / `attachment_not_ready`
+- 成功时返回 `attachments`（路径数组）与 `attachmentInfo`（`uploaded` / `chipsVisible` / `hasFileInput`）
 
 ### `web_ai_read_discussion`
 
@@ -132,7 +144,7 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
 |---|---|
 | 侧边栏格子 | 图标入口（气泡几何图形，选中态不降透明度），点了切到中央面板 |
 | 中央面板 `main` | 标题 + 构建戳 `build x.y.z`、定位说明、**运行状态块**（窗口用量 / ego 空间 / 记录数 / 最近 5 条）、调用模板（一键复制）、`用法与说明`（三重护栏 / 返回码 / 已知限制）、`自定义设置` |
-| 会话工具卡片 | 每次 `web_ai_discuss` 的结果卡片：返回码徽章、耗时、`discussionId`（可直接传给 `followUp`）、回答原文、一键复制回答；失败态显示 `reason` / `message` / 半成品 `partial` |
+| 会话工具卡片 | 每次 `web_ai_discuss` 的结果卡片：返回码徽章、耗时、`discussionId`（可直接传给 `followUp`）、附件文件名、回答原文、一键复制回答；失败态显示 `reason` / `message` / 半成品 `partial` |
 | 设置页分区 | `placement` 含 `settings` 时，在设置里占一页，内容与中央面板一致 |
 | 输入框下方 | `composerDock=true` 且 `placement` 含侧边栏时，输入框下方多一个快捷入口 |
 
@@ -187,15 +199,16 @@ HTTP 契约（同源守卫，exact 路由 `/web-ai-discuss/api/settings`）：
 
 ## 编排步骤（`web_ai_discuss`）
 
-1. 护栏取票（busy / 间隔 / 配额）；`followUp` 先折历史问答进 context
+1. 护栏取票（busy / 间隔 / 配额）；`followUp` 先折历史问答进 context；附件路径校验（**在取票之前**）
 2. 定位 ego 可执行文件
 3. 生成 ego 脚本：`taskSpace('dsh-web-ai-discuss')` → 取/建页面 → 必要时 `goto`，若 `newChat=true` 再显式点「开启新对话」（DeepSeek 会把首页重定向到上次会话，不点就还是旧会话）→ 等输入框
 4. 读页面状态：输入框存在？被禁用？有登录弹窗？已有几个回答气泡？
 5. 未登录 → `task.handOff()` → 返回 `unauthorized`
-6. **滚动到底**（真正的聊天滚动容器是 `div[class*="ds-virtual-list--printable"]`，虚拟列表只有贴底才渲染新消息）→ 填入（`fill` → evaluate 原生 setter → `keyboard.paste` 三级兜底）
-7. **发送强确认**：Enter 后按「用户消息数上涨」判定送达（输入框清空不代表送达，偶发被吞），1.8s 未确认→点发送按钮 / 重新填入，最多 3 次；仍未确认 → 快速返回 `failed/send_failed`（不白等超时）
-8. 轮询：每次采样前恢复贴底（生成期重渲染会破坏贴底状态），判据 = 用户消息数 > baseline 且最后一条 `div[class*="assistant-message-main-content"]`（**排除** `ds-think-content` 思考块）文本连续 `stableSamples` 次相同
-9. 清洗（去行尾空白、压缩空行、限长）、落盘、返回
+6. **上传附件**（可选）：`setInputFiles('input[type=file]', [...])` → 等附件 chip 出现（文件名进入正文）才算完成
+7. **滚动到底**（真正的聊天滚动容器是 `div[class*="ds-virtual-list--printable"]`，虚拟列表只有贴底才渲染新消息）→ 填入（`fill` → evaluate 原生 setter → `keyboard.paste` 三级兜底）
+8. **发送强确认**：Enter 后按「用户消息数上涨」判定送达（输入框清空不代表送达，偶发被吞），1.8s 未确认→点发送按钮 / 重新填入，最多 3 次；仍未确认 → 快速返回 `failed/send_failed`（不白等超时）
+9. 轮询：每次采样前恢复贴底（生成期重渲染会破坏贴底状态），判据 = 用户消息数 > baseline 且最后一条 `div[class*="assistant-message-main-content"]`（**排除** `ds-think-content` 思考块）文本连续 `stableSamples` 次相同
+10. 清洗（去行尾空白、压缩空行、限长）、落盘、返回
 
 > 可靠性结论（多轮 e2e 实证）：assistant 气泡数与 ds-message 计数在重渲染时都会瞬时非单调，只有「贴底视口内的增量」可用；即便如此，长会话中生成期视口仍可能漂移，所以默认每次开新会话（`newChat=true`），跨轮上文用 `followUp` 承担——新会话气泡从零开始，判据天然可靠。
 
@@ -213,19 +226,21 @@ HTTP 契约（同源守卫，exact 路由 `/web-ai-discuss/api/settings`）：
 ## 测试
 
 ```bash
-node test/cases.mjs    # 宿主侧契约与护栏，14/14
-node test/client.mjs   # 客户端注册与渲染（桩 React），41/41
+node test/cases.mjs    # 宿主侧契约与护栏，17/17
+node test/client.mjs   # 客户端注册与渲染（桩 React），42/42
 node test/smoke.mjs status|probe|read|discuss "问题"   # 真实 ego 冒烟
 ```
 
-`test/cases.mjs` 用「把 egoPath 换成 node.exe + 一个名为 `nodejs` 的替身文件」的办法，让真实 `registerTools` 拿到可控的 ego 返回值，从而覆盖 unavailable / unauthorized / busy / rate_limited / timeout / failed 全部分支。覆盖的边界还有：路径穿越 id、ego 空间互斥、布尔字符串容错、等待间隔期间被取消后护栏是否归位。
+`test/cases.mjs` 用「把 egoPath 换成 node.exe + 一个名为 `nodejs` 的替身文件」的办法，让真实 `registerTools` 拿到可控的 ego 返回值，从而覆盖 unavailable / unauthorized / busy / rate_limited / timeout / failed 全部分支。覆盖的边界还有：路径穿越 id、ego 空间互斥、布尔字符串容错、附件路径校验（且校验失败不消耗配额）、等待间隔期间被取消后护栏是否归位。
 
 ## 已知限制
 
 - **没有 ego MCP 工具可依赖**：本环境 ego 只有 CLI，插件以子进程方式调用它（脚本走 stdin，结果走文件 + stderr 哨兵行）
 - 讨论空间常驻 ego，插件不调用 `finish`；需要清理时在 ego 侧手动处理
 - 护栏作用域是**插件进程**，跨进程并发不在保护范围内
-- 网页 DOM 改版会导致选择器失效，届时更新 `lib/script.js`（三处）
+- 网页 DOM 改版会导致选择器失效，届时更新 `lib/script.js`（输入框 / 新对话按钮 / 滚动容器 / 回答气泡 / 文件控件等处）
+- 附件走的是网页自己的上传控件，**文件先被传到 DeepSeek 服务器**再被模型读取——插件只负责把路径塞进控件并等 chip 出现，不解析内容；大文件的上传耗时取决于网页端与网络
+- 附件上限是插件自己的约束（5 个 / 单个 20MB / 必须绝对路径），不是网页端的限制
 - 侧边栏面板主要承载说明与运行状态；宿主与客户端之间没有通用数据通道，逐条讨论结果在会话里的工具卡片上
 - 网页端「思考过程」是另一个 `ds-markdown` 节点，选择器已按 `assistant-message-main-content` 精确排除
 - **长会话连发同一问题的可靠性依赖 `newChat=true` 默认值**：`newChat=false` 沿用旧会话时，虚拟列表 + 重渲染抖动可能导致完成判定超时（发送本身已有多重确认兜底）；确需追问请配 `followUp`
@@ -240,11 +255,11 @@ dsh-web-ai-discuss/
   index.js              # apply：配置 → 护栏 → 系统提示片段 → 注册工具
   lib/config.js         # 常量、FLOOR、resolveConfig 钳制
   lib/ego.js            # ego 定位、子进程执行、结果读取
-  lib/script.js         # 生成 ego 脚本文本（probe/read/discuss）
+  lib/script.js         # 生成 ego 脚本文本（probe/read/discuss，含附件上传段）
   lib/guard.js          # 三重护栏
   lib/mutex.js          # ego 空间互斥锁（discuss / live 读 / probe 共用同一页面）
-  lib/store.js          # 讨论落盘与索引（id 白名单，防路径穿越）
-  lib/tools.js          # 三个工具定义与返回码映射
+  lib/store.js          # 讨论落盘与索引（id 白名单，防路径穿越；记录 attachments）
+  lib/tools.js          # 三个工具定义、返回码映射、附件路径校验（resolveAttachments）
   client.js             # 侧边栏图标 + 中央面板 + 运行状态块 + 工具卡片
   locale/{zh,en}.json   # Plugin Manager 展示元数据
   icon.svg              # 原创图标
