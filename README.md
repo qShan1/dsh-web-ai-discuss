@@ -205,6 +205,31 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
 
 > 看到面板头部的 `build` 戳 = 浏览器跑的是这版代码；看不到 = client 模块没装载（宿主重启后需 `Ctrl+R` 刷新页面，或插件被禁用）。
 
+### 副作用托管：为什么定时器和观察器必须挂 `pluginCtx.effect`
+
+宿主替换客户端模块（HMR / 重装 / 改配置）时只销毁该 fiber 的 effect，**不会**替你清理裸
+`setTimeout` / `setInterval` / `MutationObserver` / DOM 事件监听。
+
+早期实现把自诊断定时器、挂载观察器、配置兜底轮询都裸跑在 `apply()` 里，于是每次换模块都留下一个
+「僵尸实例」：旧实例的定时器继续跑、继续上报诊断、旧 JSX 继续赖在页面上。
+
+> 实测症状：同一个页面里 20 条诊断上报中 **19 条来自旧版本实例**（`build 0.4.0`），只有 1 条来自新实例
+> （`build 0.4.2`）；DOM 里能查到新 CSS（`.wai-tabs` 等规则已生效），但面板结构仍是旧版。
+> 这不是缓存问题，而是旧 `apply()` 从未退场。
+
+现在的 `apply()`（`client.js`）把所有活体资源放进**一个** `pluginCtx.effect(setupRuntime)`，返回的清理函数会：
+
+1. 置位 `diagDone`（旧实例立刻停止上报）；
+2. `clearTimeout` / `clearInterval`；
+3. `observer.disconnect()`；
+4. 撤掉 `mount()` 注册的入口（`disposers`）；
+5. 仅当 `uiReload` 仍指向自己时才置空（新实例接管后不能被旧实例清掉）。
+
+清理函数幂等，重复调用安全。极老宿主没有 `ctx.effect` 时退化为「只跑一次、不清理」，至少不抛异常。
+
+回归测试在 `test/client.mjs` 末尾的「退场清理」用例：桩 `MutationObserver` 与 `clearTimeout/clearInterval`
+计数，断言 `dispose()` 后观察器已断开、定时器已清除、重复销毁安全。把清理体注释掉，该用例会失败（2 条 FAIL）。
+
 ### 样式注入：为什么必须「刷新」而不是「存在就跳过」
 
 宿主里的 `<style>` 是**常驻 DOM**，插件热重载（HMR）或重新装载时只更新 JSX，旧 `<style>` 仍在文档里。

@@ -1,5 +1,5 @@
 /**
- * dsh-web-ai-discuss — 客户端（浏览器侧）模块。v0.4.2（未发布开发版）
+ * dsh-web-ai-discuss — 客户端（浏览器侧）模块。v0.4.3（未发布开发版）
  *
  * 三块 UI：
  *   1. sidebar.panellist  侧边栏格子（图标）
@@ -29,7 +29,7 @@ window.__ModuleLoader__.load({
     const TOOL_DISCUSS = 'web_ai_discuss';
     const SETTINGS_API = '/web-ai-discuss/api/settings';
     // 构建戳：面板头部显示。看到它 = 浏览器在跑这版代码；看不到 = client 模块没装载。
-    const CLIENT_BUILD = '0.4.2';
+    const CLIENT_BUILD = '0.4.3';
 
     const isZh = () => {
       try {
@@ -1843,65 +1843,99 @@ window.__ModuleLoader__.load({
       };
       mount();
 
-      // 一次性自诊断：把宿主里的真实 DOM/CSS 状态回报给宿主侧路由。
-      // 排障用：样式是否落地、规则是否解析、面板是否在 shadow root 里。
-      // 报告时机：装载后 1.5s 一次；等面板真正挂载（用户点开）再补一次，之后收工。
-      // 用 MutationObserver 等挂载，而不是轮询——面板是懒渲染的，
-      // 轮询既慢又长期空转。
-      let diagDone = false;
-      const diagOnce = () => {
-        if (diagDone) return;
-        diagDone = true;
-        try { reportDiag(); } catch (e) { /* ignore */ }
-      };
-      setTimeout(diagOnce, 1500);
-      if (typeof MutationObserver === 'function' && typeof document !== 'undefined' && document.body) {
-        try {
-          const observer = new MutationObserver(() => {
-            let hit = null;
-            try { hit = document.querySelector('.wai-root'); } catch (e) { hit = null; }
-            if (hit) {
-              try { observer.disconnect(); } catch (e) { /* ignore */ }
-              diagOnce();
-            }
-          });
-          observer.observe(document.body, { childList: true, subtree: true });
-        } catch (e) { /* ignore */ }
+      // 一个 effect 托管本实例的全部「活体」资源：自诊断的定时器/观察器、配置兜底轮询、
+      // 以及 mount() 之后留下的入口注册。
+      //
+      // 为什么必须走 pluginCtx.effect：宿主替换客户端模块时（HMR / 重装 / 改配置）
+      // 只会销毁该 fiber 的效果，不会替你清理裸 setTimeout/setInterval/MutationObserver。
+      // 早期版本没托管 → 旧实例的定时器一直在跑，出现「同一页面多个版本实例同时上报、
+      // 旧 JSX 界面赖着不走」。effect 的清理函数是唯一可靠的退场点。
+      const hostEffect = typeof pluginCtx.effect === 'function' ? pluginCtx.effect.bind(pluginCtx) : null;
+      if (hostEffect === null) {
+        // 极老宿主没有 effect：退化成只跑一次，至少不抛异常（不清理好过不挂载）。
+        setupRuntime();
+      } else {
+        hostEffect(setupRuntime);
       }
 
-      // 拉生效配置，位置变了就重挂。
-      // 为什么不只靠设置表单的 uiReload：设置也可以从命令行/API 直改（curl POST /api/settings），
-      // 那条路不会触发表单回调。这里做**低频轮询**兜底，让入口位置最终与宿主配置一致。
-      if (typeof globalThis.fetch === 'function') {
-        const load = () => {
-          fetch(SETTINGS_API, { cache: 'no-store' })
-            .then((res) => (res.ok ? res.json() : null))
-            .then((body) => {
-              const eff = body && body.effective;
-              if (!eff || typeof eff.placement !== 'string') return;
-              const next = {
-                placement: ['sidebar', 'settings', 'both'].includes(eff.placement) ? eff.placement : 'sidebar',
-                composerDock: eff.composerDock === true,
-              };
-              if (next.placement !== ui.placement || next.composerDock !== ui.composerDock) {
-                ui = next;
-                writeCachedUi(ui);
-                mount();
-              } else {
-                writeCachedUi(ui);
-              }
-            })
-            .catch(() => { /* 拉不到就用缓存位置 */ });
+      function setupRuntime() {
+        // ── 自诊断（排障用）──
+        // 把宿主里的真实 DOM/CSS 状态回报给宿主侧路由：样式是否落地、规则是否解析、
+        // 面板是否在 shadow root 里。装载后 1.5s 报一次；等面板真正挂载（用户点开）再补
+        // 一次，之后收工。用 MutationObserver 等挂载而不是轮询——面板是懒渲染的。
+        let diagDone = false;
+        const diagOnce = () => {
+          if (diagDone) return;
+          diagDone = true;
+          try { reportDiag(); } catch (e) { /* ignore */ }
         };
-        uiReload = load;
-        load();
-        // 兜底轮询：10s 一次，页面不可见时不发请求。
-        try {
-          const timer = setInterval(() => {
-            try { if (typeof document === 'undefined' || !document.hidden) load(); } catch (e) { /* ignore */ }
-          }, 10000);
-          if (typeof timer === 'object' && typeof timer.unref === 'function') timer.unref();
-        } catch (e) { /* ignore */ }
+        const diagTimer = setTimeout(diagOnce, 1500);
+
+        let observer = null;
+        if (typeof MutationObserver === 'function' && typeof document !== 'undefined' && document.body) {
+          try {
+            observer = new MutationObserver(() => {
+              let hit = null;
+              try { hit = document.querySelector('.wai-root'); } catch (e) { hit = null; }
+              if (hit) {
+                try { observer.disconnect(); } catch (e) { /* ignore */ }
+                observer = null;
+                diagOnce();
+              }
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+          } catch (e) { observer = null; }
+        }
+
+        // ── 配置兜底轮询 ──
+        // 为什么不只靠设置表单的 uiReload：设置也可以从命令行/API 直改
+        // （curl POST /api/settings），那条路不会触发表单回调。
+        let pollTimer = null;
+        let loadRef = null;
+        if (typeof globalThis.fetch === 'function') {
+          const load = () => {
+            fetch(SETTINGS_API, { cache: 'no-store' })
+              .then((res) => (res.ok ? res.json() : null))
+              .then((body) => {
+                const eff = body && body.effective;
+                if (!eff || typeof eff.placement !== 'string') return;
+                const next = {
+                  placement: ['sidebar', 'settings', 'both'].includes(eff.placement) ? eff.placement : 'sidebar',
+                  composerDock: eff.composerDock === true,
+                };
+                if (next.placement !== ui.placement || next.composerDock !== ui.composerDock) {
+                  ui = next;
+                  writeCachedUi(ui);
+                  mount();
+                } else {
+                  writeCachedUi(ui);
+                }
+              })
+              .catch(() => { /* 拉不到就用缓存位置 */ });
+          };
+          uiReload = load;
+          loadRef = load;
+          load();
+          // 兜底轮询：10s 一次，页面不可见时不发请求。
+          try {
+            pollTimer = setInterval(() => {
+              try { if (typeof document === 'undefined' || !document.hidden) load(); } catch (e) { /* ignore */ }
+            }, 10000);
+            if (typeof pollTimer === 'object' && typeof pollTimer.unref === 'function') pollTimer.unref();
+          } catch (e) { pollTimer = null; }
+        }
+
+        // 退场：先摘入口，再停定时器与观察器。本实例此后不再说话。
+        return () => {
+          diagDone = true;
+          try { clearTimeout(diagTimer); } catch (e) { /* ignore */ }
+          try { if (observer) observer.disconnect(); } catch (e) { /* ignore */ }
+          try { if (pollTimer !== null) clearInterval(pollTimer); } catch (e) { /* ignore */ }
+          // uiReload 是模块级变量，可能已被新实例接管；只在自己还占着它时才清。
+          if (uiReload === loadRef) uiReload = null;
+          for (const d of disposers) { try { d(); } catch (e) { /* ignore */ } }
+          disposers = [];
+        };
       }
     }
     return {

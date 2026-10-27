@@ -122,10 +122,12 @@ check('apply 是函数', typeof mod.apply === 'function');
 // ── 假 ctx：记录注册 ────────────────────────────────────
 const registered = [];
 const selectedPanels = [];
+// effect 托管：apply 必须把定时器/观察器交给宿主 fiber，而不是裸跑
+const effectDisposers = [];
 const fakeCtx = {
   slots: {
     inject(name, factory) {
-      check(`slots.inject 目标合法：${name}`, ['sidebar.panellist', 'main', 'tool.call.toolview'].includes(name), name);
+      check(`slots.inject 目标合法：${name}`, ['sidebar.panellist', 'main', 'tool.call.toolview', 'settings.section'].includes(name), name);
       return factory();
     },
     register(spec2, component) {
@@ -138,9 +140,16 @@ const fakeCtx = {
       selectedPanels.push(id);
     },
   },
+  effect(setup) {
+    const dispose = setup();
+    if (typeof dispose === 'function') effectDisposers.push(dispose);
+    return dispose;
+  },
 };
 
 mod.apply(fakeCtx);
+
+check('apply 用 pluginCtx.effect 托管副作用', effectDisposers.length === 1, effectDisposers.length);
 
 check('注册三处 slot', registered.length === 3, registered.length);
 
@@ -261,7 +270,7 @@ effects.length = 0;
 const panelTree = mainSlot.component({});
 const panelText = textOf(panelTree);
 check('面板：含定位说明', panelText.includes('外部讨论通道'), panelText.slice(0, 60));
-check('面板：含构建戳 0.4.2', panelText.includes('build 0.4.2'), panelText.slice(0, 140));
+check('面板：含构建戳 0.4.2', panelText.includes('build 0.4.3'), panelText.slice(0, 140));
 check('面板：含三个分区标签', panelText.includes('概览') && panelText.includes('预设') && panelText.includes('设置'), panelText.slice(0, 400));
 check('面板：首屏停在概览分区（不含设置字段）',
   panelText.includes('运行状态') && !panelText.includes('窗口上限'), panelText.slice(0, 400));
@@ -482,6 +491,11 @@ const ctx2 = {
     register(spec) { allRegs2.push(spec.name); return () => {}; },
   },
   layout: { selectPanel() {} },
+  effect(setup) {
+    const dispose = setup();
+    if (typeof dispose === 'function') effectDisposers.push(dispose);
+    return dispose;
+  },
 };
 mod.apply(ctx2);
 await new Promise((r) => setTimeout(r, 10)); // 等 fetch → uiReload → 重挂完成
@@ -490,6 +504,69 @@ check('位置=设置页：不保留侧边栏格子与 main',
   !allRegs2.includes('sidebar.panellist') && !allRegs2.includes('main'), allRegs2);
 check('位置=设置页：工具卡片仍注册', allRegs2.includes('tool.call.toolview'), allRegs2);
 check('位置写入了 localStorage 缓存', (lsData[LS_KEY_TEST] || '').includes('settings'), lsData);
+
+// ── 退场清理：宿主替换模块时不能留下活体（旧实例的定时器/观察器必须停）──
+// 这是实测过的真问题：早期版本裸跑 setInterval/MutationObserver，
+// HMR 换模块后旧实例继续上报、旧 UI 赖着不走。
+{
+  const clearedTimeouts = [];
+  const clearedIntervals = [];
+  const realClearTimeout = globalThis.clearTimeout;
+  const realClearInterval = globalThis.clearInterval;
+  let observed = 0;
+  let disconnected = 0;
+  const RealMO = globalThis.MutationObserver;
+
+  globalThis.clearTimeout = (t) => { clearedTimeouts.push(t); return realClearTimeout(t); };
+  globalThis.clearInterval = (t) => { clearedIntervals.push(t); return realClearInterval(t); };
+  globalThis.MutationObserver = class {
+    constructor(cb) { this.cb = cb; }
+    observe() { observed += 1; }
+    disconnect() { disconnected += 1; }
+  };
+
+  const cleanupCtx = {
+    slots: {
+      inject(name, cb) { check(`清理用例 slots.inject 目标合法：${name}`, ['sidebar.panellist', 'main', 'tool.call.toolview', 'settings.section'].includes(name), name); cb(); return () => {}; },
+      register() { return () => {}; },
+    },
+    layout: { selectPanel() {} },
+    effect(setup) {
+      const dispose = setup();
+      if (typeof dispose === 'function') effectDisposers.push(dispose);
+      return dispose;
+    },
+  };
+
+  const before = effectDisposers.length;
+  // 观察器只在有 document.body 时才建；本用例需要它来验证 disconnect。
+  const hadDocument = 'document' in globalThis;
+  const realDocument = globalThis.document;
+  globalThis.document = { body: {}, querySelector: () => null };
+  mod.apply(cleanupCtx);
+  check('清理用例：apply 交出一个可销毁 effect', effectDisposers.length === before + 1, effectDisposers.length - before);
+  check('清理用例：观察器已开始观察', observed >= 1, observed);
+
+  const dispose = effectDisposers[effectDisposers.length - 1];
+  let threw = null;
+  try { dispose(); } catch (e) { threw = e; }
+  check('清理用例：销毁不抛异常', threw === null, threw && String(threw));
+  check('清理用例：观察器已断开', disconnected >= 1, disconnected);
+  check('清理用例：定时器已清除（timeout + interval）',
+    clearedTimeouts.length >= 1 && clearedIntervals.length >= 1,
+    { clearedTimeouts: clearedTimeouts.length, clearedIntervals: clearedIntervals.length });
+
+  let second = null;
+  try { dispose(); } catch (e) { second = e; }
+  check('清理用例：重复销毁安全（幂等）', second === null, second && String(second));
+
+  globalThis.clearTimeout = realClearTimeout;
+  globalThis.clearInterval = realClearInterval;
+  if (hadDocument) globalThis.document = realDocument;
+  else delete globalThis.document;
+  if (RealMO === undefined) delete globalThis.MutationObserver;
+  else globalThis.MutationObserver = RealMO;
+}
 
 console.log(`\n${passed}/${passed + failed} passed`);
 if (failed > 0) process.exitCode = 1;
