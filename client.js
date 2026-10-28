@@ -1107,9 +1107,11 @@ window.__ModuleLoader__.load({
         out.bodyAttrs = document.body ? Array.from(document.body.attributes).map((a) => a.name + '=' + a.value).slice(0, 12) : [];
       } catch (e) { out.varsError = String((e && e.message) || e); }
 
-      // 5) better-sidebar 集成：「装了但侧边栏里没有」这类问题只能靠这个量
+      // 5) better-sidebar 集成：「装了但侧边栏里没有」这类问题只能靠这个量。
+      // 注意 ctx 是 Proxy：读没 inject 的服务名会 throw，探测必须整体在 try 里。
       try {
-        const svc = ctx && ctx.betterSidebar;
+        let svc = null;
+        try { svc = ctx ? ctx.betterSidebar : null; } catch (e) { svc = null; }
         const tabs = svc && typeof svc.getTabs === 'function' ? svc.getTabs() : null;
         out.betterSidebar = {
           service: !!svc,
@@ -1911,12 +1913,26 @@ window.__ModuleLoader__.load({
      * 契约来自该插件 docs/external-plugin-guide.md：
      *   ctx.betterSidebar.registerTab(descriptor) → disposer，且必须包在 ctx.effect 里，
      *   否则 HMR / 禁用后注册残留，下次激活抛 already registered。
-     * 该服务只在它的 client half 提供；未安装时 ctx.betterSidebar 为 undefined，跳过即可，
-     * 因此本插件不把它写进 inject（写进去会让整个插件在没装它时无法激活）。
+     *
+     * 这里有个必须记住的坑：**cordis 的 Context 是 Proxy，读一个没 inject 的服务名会直接 throw**
+     * （`cannot get property "xxx" without inject`），不是返回 undefined。所以服务探测本身
+     * 就必须在 try 里——写在外面会让 apply() 整个抛异常，插件根本不挂载。
      */
     function registerBetterSidebar(pluginCtx, collect) {
-      const svc = pluginCtx && pluginCtx.betterSidebar;
-      if (!svc || typeof svc.registerTab !== 'function') return;
+      let svc = null;
+      try {
+        svc = pluginCtx.betterSidebar;
+      } catch (e) {
+        // 没装 / 没启用：Proxy 拒答，按「未集成」处理
+        bsState.registered = false;
+        bsState.error = null;
+        return;
+      }
+      if (!svc || typeof svc.registerTab !== 'function') {
+        bsState.registered = false;
+        bsState.error = null;
+        return;
+      }
       const descriptor = {
         id: PANEL_ID,
         title: () => T.panel,

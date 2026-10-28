@@ -603,25 +603,40 @@ check('位置写入了 localStorage 缓存', (lsData[LS_KEY_TEST] || '').include
 }
 
 // ── better-sidebar 可选集成 ──
-// 它只在 client half 提供 ctx.betterSidebar；没装时必须照常工作（不写进 inject，
-// 否则插件在没装它的机器上整个不激活）。装了则必须把注册包进 ctx.effect，
-// 否则 HMR 后残留注册、下次激活报 already registered。
+// 关键事实：cordis 的 Context 是 Proxy，**读一个没 inject 的服务名会直接 throw**
+// （`cannot get property "xxx" without inject`），不是返回 undefined。
+// 桩必须复刻这个行为，否则「服务探测写在 try 外面」这类致命 bug 测不出来
+// ——它会带崩 apply()，整个插件不挂载。
+const ctxProxy = (base, present) => new Proxy(base, {
+  get(target, prop) {
+    if (prop in target) return target[prop];
+    if (typeof prop === 'symbol') return undefined;
+    if (!present.includes(prop)) {
+      throw new Error(`cannot get property "${String(prop)}" without inject`);
+    }
+    return undefined;
+  },
+});
+
 {
   const realDocument = globalThis.document;
   const hadDocument = 'document' in globalThis;
   globalThis.document = { body: {}, querySelector: () => null };
 
-  // 1) 没装：不抛、不注册
+  // 1) 没装：Proxy 拒答 bestterSidebar，apply 不得抛
   {
     const offs = [];
-    const bare = {
+    const bare = ctxProxy({
       slots: { inject: (n, cb) => { cb(); return () => {}; }, register: () => () => {} },
       layout: { selectPanel() {} },
       effect(setup) { const d = setup(); offs.push(d); return d; },
-    };
+    }, ['slots', 'layout', 'effect']);
     let threw = null;
     try { mod.apply(bare); } catch (e) { threw = e; }
-    check('better-sidebar：未安装时 apply 不抛', threw === null, threw && String(threw));
+    check('better-sidebar：未安装（Proxy 拒答）时 apply 不抛', threw === null, threw && String(threw));
+    // 挂了入口就说明 apply 真的跑到了 mount
+    check('better-sidebar：未安装时仍注册了自己的入口',
+      offs.length >= 1, offs.length);
   }
 
   // 2) 装了：注册一页，且注册动作被 ctx.effect 托管
@@ -629,14 +644,15 @@ check('位置写入了 localStorage 缓存', (lsData[LS_KEY_TEST] || '').include
     const tabs = [];
     const offs = [];
     let effectCalls = 0;
-    const withSidebar = {
+    const withSidebar = ctxProxy({
       slots: { inject: (n, cb) => { cb(); return () => {}; }, register: () => () => {} },
       layout: { selectPanel() {} },
       effect(setup) { effectCalls += 1; const d = setup(); offs.push(d); return d; },
       betterSidebar: {
         registerTab(desc) { tabs.push(desc); return () => { const i = tabs.indexOf(desc); if (i >= 0) tabs.splice(i, 1); }; },
+        getTabs() { return tabs.slice(); },
       },
-    };
+    }, ['slots', 'layout', 'effect', 'betterSidebar']);
     mod.apply(withSidebar);
     check('better-sidebar：注册了一页', tabs.length === 1, tabs.length);
     const desc = tabs[0] || {};
@@ -648,12 +664,12 @@ check('位置写入了 localStorage 缓存', (lsData[LS_KEY_TEST] || '').include
     check('better-sidebar：注册包在 ctx.effect 里（HMR 可撤销）', effectCalls >= 1, effectCalls);
 
     // 重名注册会抛 already registered：必须记进 diag，而不是静默失败。
-    const dup = {
+    const dup = ctxProxy({
       slots: { inject: (n, cb) => { cb(); return () => {}; }, register: () => () => {} },
       layout: { selectPanel() {} },
       effect(setup) { const d = setup(); offs.push(d); return d; },
       betterSidebar: { registerTab() { throw new Error('[dsh-better-sidebar] tab type "web-ai-discuss" already registered'); } },
-    };
+    }, ['slots', 'layout', 'effect', 'betterSidebar']);
     let dupThrew = null;
     try { mod.apply(dup); } catch (e) { dupThrew = e; }
     check('better-sidebar：重名注册不向外抛（插件照常激活）', dupThrew === null, dupThrew && String(dupThrew));
