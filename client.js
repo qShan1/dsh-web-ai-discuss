@@ -1118,6 +1118,9 @@ window.__ModuleLoader__.load({
             ? tabs.map((d) => d && d.id).filter(Boolean).slice(0, 20)
             : null,
           hasMine: Array.isArray(tabs) ? tabs.some((d) => d && d.id === PANEL_ID) : null,
+          // 本实例的注册结果：hasMine=false 时靠 error 区分「没装」和「注册抛了」
+          mineRegistered: bsState.registered,
+          mineError: bsState.error,
         };
       } catch (e) { out.betterSidebarError = String((e && e.message) || e); }
 
@@ -1899,6 +1902,8 @@ window.__ModuleLoader__.load({
     let ctx = null;
     // apply 里赋值的"重读显示位置并可能重挂入口"回调；SettingsForm 保存成功后调用
     let uiReload = null;
+    // better-sidebar 注册结果，供 diag 上报（模块级：跨实例只反映最近一次注册）
+    const bsState = { registered: null, error: null };
 
     /**
      * 向 dsh-better-sidebar 注册一页（可选集成）。
@@ -1927,7 +1932,13 @@ window.__ModuleLoader__.load({
           ? pluginCtx.effect(register)
           : register();
         if (typeof off === 'function') collect(off);
-      } catch (e) { /* 底座版本不符就退回本插件自己的入口 */ }
+        bsState.registered = true;
+        bsState.error = null;
+      } catch (e) {
+        // 重名会抛 already registered；把原因留给 diag，否则"装了却没有这一页"无从查证。
+        bsState.registered = false;
+        bsState.error = String((e && e.message) || e);
+      }
     }
 
     function apply(pluginCtx) {

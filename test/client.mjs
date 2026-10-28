@@ -647,6 +647,17 @@ check('位置写入了 localStorage 缓存', (lsData[LS_KEY_TEST] || '').include
       typeof desc.icon === 'function' && typeof desc.component === 'function');
     check('better-sidebar：注册包在 ctx.effect 里（HMR 可撤销）', effectCalls >= 1, effectCalls);
 
+    // 重名注册会抛 already registered：必须记进 diag，而不是静默失败。
+    const dup = {
+      slots: { inject: (n, cb) => { cb(); return () => {}; }, register: () => () => {} },
+      layout: { selectPanel() {} },
+      effect(setup) { const d = setup(); offs.push(d); return d; },
+      betterSidebar: { registerTab() { throw new Error('[dsh-better-sidebar] tab type "web-ai-discuss" already registered'); } },
+    };
+    let dupThrew = null;
+    try { mod.apply(dup); } catch (e) { dupThrew = e; }
+    check('better-sidebar：重名注册不向外抛（插件照常激活）', dupThrew === null, dupThrew && String(dupThrew));
+
     // 卸载后注册必须被撤销，否则下次激活 already registered
     for (const off of offs) { try { if (typeof off === 'function') off(); } catch (e) { /* ignore */ } }
     check('better-sidebar：卸载后注册已撤销', tabs.length === 0, tabs.length);
