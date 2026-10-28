@@ -551,16 +551,22 @@ const cases = [
         const tpl = p.templates[lv];
         assert.ok(tpl.includes(p.structure), `${p.id}/${lv} 应包含该角度的结构段`);
         assert.equal((tpl.match(/\{prompt\}/g) || []).length, 1, `${p.id}/${lv} 应恰含一个 {prompt}`);
+        // 三档一律结论先行：这是「答案可用」的地基，不是风格偏好。
+        // （极简档用固定格式「结论：/依据：」表达，标准与深度用「先给结论」表达。）
+        assert.ok(tpl.split(p.structure)[0].includes('结论'), `${p.id}/${lv} 档位规格必须要求结论先行`);
       }
-      const lens = PRESET_LEVEL_IDS.map((lv) => p.templates[lv].length);
-      assert.ok(lens[0] < lens[1] && lens[1] < lens[2], `${p.id} 模板长度应随深度递增：${lens}`);
       // 结构段在末尾、档位规格在开头：三档去掉 {prompt} 之后尾巴必须逐字相同
       const tails = rendered.map((x) => x.slice(x.indexOf(p.structure)));
       assert.equal(new Set(tails).size, 1, `${p.id} 三档的角度结构必须完全一致`);
     }
+    // 三档规格必须两两不同（否则档位形同虚设）
+    const specs = PRESET_LEVEL_IDS.map((lv) => PRESETS[0].templates[lv].split(PRESETS[0].structure)[0]);
+    assert.equal(new Set(specs).size, 3, '三档档位规格必须互不相同');
     assert.deepEqual(PRESET_LEVELS.map((l) => l.title ?? l.zh), ['极简', '标准', '深度']);
-    // 极简档要明确「只挑最关键的一条」，否则会和结构里的分档要求打架
-    assert.ok(PRESETS[0].templates.light.includes('挑最关键的一条'));
+    // 极简档不能是「纯结论」：必须要求给出依据，否则拿到结论的 Agent 无法采信。
+    // 也不能靠「不超过三句」这种数量指令限长——实测网页版不遵守，改用固定两行格式。
+    assert.ok(PRESETS[0].templates.light.includes('依据'), '极简档必须要求给出依据');
+    assert.ok(PRESETS[0].templates.light.includes('只输出两行'), '极简档必须用固定格式限长');
     const applied = applyPreset(PRESETS[0], '把 A 换成 B 会不会更快', 'light');
     assert.ok(applied.endsWith('把 A 换成 B 会不会更快'), '原始提问必须原样收尾');
     return 'depth-only tiers ok';
