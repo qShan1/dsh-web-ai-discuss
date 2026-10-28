@@ -1909,18 +1909,27 @@ window.__ModuleLoader__.load({
      * 安全探测一个可选服务。
      *
      * cordis 的 Context 是 Proxy：`ctx.foo` 对没 inject 的服务名会直接抛
-     * `cannot get property "foo" without inject`，**不是**返回 undefined。
-     * 官方的安全通道是 `ctx.reflect.get(name, false)`——非严格模式下缺服务返回 undefined。
-     * 拿不到 reflect（早期宿主或测试桩）时退回 try/catch 探测。
+     * `cannot get property "foo" without inject`，**不是**返回 undefined；
+     * 而把可选服务写进 inject，宿主没提供时会让 fiber 一直 park —— 那是整个 web
+     * 启动失败，不只是本插件不加载（dsh-sidebar-qa 的源码注释里专门警告过这点）。
+     *
+     * 官方安全通道是 `ctx.get(name, false)`（reflect.get 的非严格模式）：缺服务返回
+     * undefined。拿不到时依次退回 ctx.reflect.get / try-catch 读属性。
      */
     function probeService(pluginCtx, name) {
+      try {
+        if (pluginCtx && typeof pluginCtx.get === 'function') {
+          const svc = pluginCtx.get(name, false);
+          if (svc) return svc;
+        }
+      } catch (e) { /* 宿主版本没有 ctx.get，往下试 */ }
       try {
         const reflect = pluginCtx && pluginCtx.reflect;
         if (reflect && typeof reflect.get === 'function') {
           const svc = reflect.get(name, false);
           if (svc) return svc;
         }
-      } catch (e) { /* 没有 reflect，继续走下面的兜底 */ }
+      } catch (e) { /* 没有 reflect，继续兜底 */ }
       try {
         return pluginCtx ? pluginCtx[name] : undefined;
       } catch (e) {

@@ -617,17 +617,18 @@ const ctxProxy = (base, present) => new Proxy(base, {
     return undefined;
   },
 });
-// 真宿主的文档通道：ctx.reflect.get(name, false) 缺服务时返回 undefined 而不是抛。
-// 测试桩必须带上它，否则只测到 try/catch 兜底那条路。
+// 真宿主的文档通道有两个：ctx.get(name, false) 与 ctx.reflect.get(name, false)，
+// 两者缺服务时都返回 undefined 而不是抛。测试桩带上两者，覆盖优先顺序。
 const withReflect = (base, present) => {
-  base.reflect = {
-    get(name, strict = true) {
-      if (present.includes(name) && base[name] !== undefined) return base[name];
-      if (strict) throw new Error(`cannot get property "${name}" without inject`);
-      return undefined;
-    },
+  const lookup = (name) => (present.includes(name) ? base[name] : undefined);
+  base.get = (name, strict = true) => {
+    const v = lookup(name);
+    if (v !== undefined) return v;
+    if (strict) throw new Error(`cannot get property "${name}" without inject`);
+    return undefined;
   };
-  return ctxProxy(base, [...present, 'reflect']);
+  base.reflect = { get: (name, strict = true) => base.get(name, strict) };
+  return ctxProxy(base, [...present, 'get', 'reflect']);
 };
 
 {
