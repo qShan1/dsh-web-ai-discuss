@@ -205,7 +205,8 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
 - **宽度策略：结构块铺满，成段文字按 72ch 收口**。`.wai-wrap` 是 `max-width: 100%`（不再是 `68ch`），
   指标网格、预设行、设置字段这些结构块用满可用宽度；只有 `.wai-text` / `.wai-list > li` 这类整段说明文字按 `72ch` 封顶，
   避免宽栏下正文被拉成超长单行。宽栏（`@container wai (min-width: 620px)`）额外把设置项排成两列、`.wai-field-wide`（Webhook URL / 钩子模块）跨整行、
-  Tab 条按内容收口、预设行合成单行（id/名称 → 说明 → 操作）；
+  Tab 条按内容收口、预设行合成单行（id/名称 → 说明 → 操作）、说明块 `72ch` 收口；
+  运行状态那四个指标在宽栏下是「均分但整条 `max-width: 620px`」——纯均分会让 `2 / 6` 和 `11` 隔屏相望，纯按内容取宽又把它们挤到左半边；
 - **保存条吸底**：`.wai-actions-sticky` 用 `bottom: calc(-1 * var(--wai-pad-b))` + 等值负 margin 把底边贴平滚动区，
   设置很长时不用滚回去点保存；`--wai-pad-b` 在窄栏覆写为 26px，两个方向同时跟着变，不会留一条横贯的白带；
 - 交互状态（hover / focus-visible / active / disabled / 选中 / 滚动条 / 选区）由注入的命名空间 CSS `.wai-*` 承担，不覆盖宿主选择器；
