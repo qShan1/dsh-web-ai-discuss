@@ -151,7 +151,12 @@ mod.apply(fakeCtx);
 
 check('apply 用 pluginCtx.effect 托管副作用', effectDisposers.length === 1, effectDisposers.length);
 
-check('注册三处 slot', registered.length === 3, registered.length);
+// 默认入口是 both（侧边栏格子 + 主面板 + 设置页分区 + 工具卡片），四处都注册。
+check('默认位置 both：注册四处 slot', registered.length === 4, registered.length);
+check('默认位置 both：侧边栏与设置页分区都在',
+  registered.some((r) => r.spec.name === 'sidebar.panellist')
+  && registered.some((r) => r.spec.name === 'settings.section'),
+  registered.map((r) => r.spec.name));
 
 const byName = (name) => registered.find((r) => r.spec.name === name);
 
@@ -270,7 +275,7 @@ effects.length = 0;
 const panelTree = mainSlot.component({});
 const panelText = textOf(panelTree);
 check('面板：含定位说明', panelText.includes('外部讨论通道'), panelText.slice(0, 60));
-check('面板：含构建戳 0.5.0', panelText.includes('build 0.5.0'), panelText.slice(0, 140));
+check('面板：含构建戳 0.6.0', panelText.includes('build 0.6.0'), panelText.slice(0, 140));
 check('面板：含三个分区标签', panelText.includes('概览') && panelText.includes('预设') && panelText.includes('设置'), panelText.slice(0, 400));
 check('面板：首屏停在概览分区（不含设置字段）',
   panelText.includes('运行状态') && !panelText.includes('窗口上限'), panelText.slice(0, 400));
@@ -595,6 +600,60 @@ check('位置写入了 localStorage 缓存', (lsData[LS_KEY_TEST] || '').include
   else delete globalThis.document;
   if (RealMO === undefined) delete globalThis.MutationObserver;
   else globalThis.MutationObserver = RealMO;
+}
+
+// ── better-sidebar 可选集成 ──
+// 它只在 client half 提供 ctx.betterSidebar；没装时必须照常工作（不写进 inject，
+// 否则插件在没装它的机器上整个不激活）。装了则必须把注册包进 ctx.effect，
+// 否则 HMR 后残留注册、下次激活报 already registered。
+{
+  const realDocument = globalThis.document;
+  const hadDocument = 'document' in globalThis;
+  globalThis.document = { body: {}, querySelector: () => null };
+
+  // 1) 没装：不抛、不注册
+  {
+    const offs = [];
+    const bare = {
+      slots: { inject: (n, cb) => { cb(); return () => {}; }, register: () => () => {} },
+      layout: { selectPanel() {} },
+      effect(setup) { const d = setup(); offs.push(d); return d; },
+    };
+    let threw = null;
+    try { mod.apply(bare); } catch (e) { threw = e; }
+    check('better-sidebar：未安装时 apply 不抛', threw === null, threw && String(threw));
+  }
+
+  // 2) 装了：注册一页，且注册动作被 ctx.effect 托管
+  {
+    const tabs = [];
+    const offs = [];
+    let effectCalls = 0;
+    const withSidebar = {
+      slots: { inject: (n, cb) => { cb(); return () => {}; }, register: () => () => {} },
+      layout: { selectPanel() {} },
+      effect(setup) { effectCalls += 1; const d = setup(); offs.push(d); return d; },
+      betterSidebar: {
+        registerTab(desc) { tabs.push(desc); return () => { const i = tabs.indexOf(desc); if (i >= 0) tabs.splice(i, 1); }; },
+      },
+    };
+    mod.apply(withSidebar);
+    check('better-sidebar：注册了一页', tabs.length === 1, tabs.length);
+    const desc = tabs[0] || {};
+    check('better-sidebar：id 与插件面板同名（去重/单实例）',
+      desc.id === 'web-ai-discuss' && desc.single === true, { id: desc.id, single: desc.single });
+    check('better-sidebar：标题取当前语言的面板名', desc.title() === 'DeepSeek 讨论', desc.title && desc.title());
+    check('better-sidebar：有图标与渲染组件',
+      typeof desc.icon === 'function' && typeof desc.component === 'function');
+    check('better-sidebar：注册包在 ctx.effect 里（HMR 可撤销）', effectCalls >= 1, effectCalls);
+
+    // 卸载后注册必须被撤销，否则下次激活 already registered
+    for (const off of offs) { try { if (typeof off === 'function') off(); } catch (e) { /* ignore */ } }
+    check('better-sidebar：卸载后注册已撤销', tabs.length === 0, tabs.length);
+  }
+
+  if (hadDocument) globalThis.document = realDocument;
+  else delete globalThis.document;
 }
 
 console.log(`\n${passed}/${passed + failed} passed`);

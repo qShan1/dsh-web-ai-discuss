@@ -1,5 +1,5 @@
 /**
- * dsh-web-ai-discuss — 客户端（浏览器侧）模块。v0.5.0（未发布开发版）
+ * dsh-web-ai-discuss — 客户端（浏览器侧）模块。v0.6.0（未发布开发版）
  *
  * 三块 UI：
  *   1. sidebar.panellist  侧边栏格子（图标）
@@ -29,7 +29,7 @@ window.__ModuleLoader__.load({
     const TOOL_DISCUSS = 'web_ai_discuss';
     const SETTINGS_API = '/web-ai-discuss/api/settings';
     // 构建戳：面板头部显示。看到它 = 浏览器在跑这版代码；看不到 = client 模块没装载。
-    const CLIENT_BUILD = '0.5.0';
+    const CLIENT_BUILD = '0.6.0';
 
     const isZh = () => {
       try {
@@ -43,9 +43,9 @@ window.__ModuleLoader__.load({
       ? {
         panel: 'DeepSeek 讨论',
         title: '外部讨论通道',
-        lead: '把已登录的网页版 DeepSeek 当作外部思路来源。网页操作全部经本机 ego lite 完成，不构造协议、不接管登录。',
-        when: '只在需要多角度讨论、评审、方案对比或找反例时调用；日常问答、事实查询、代码补全不要走这里。',
-        store: '讨论记录落在 DSH 存储目录的 web-ai-discuss/ 下，用 web_ai_read_discussion 读回（id / search / live）。',
+        lead: '网页版 DeepSeek 作为外部思路来源，操作经本机 ego lite 完成。',
+        when: '用于多角度评审、方案对比、找反例。日常问答与代码补全直接自己做。',
+        store: '记录落在 web-ai-discuss/，用 web_ai_read_discussion 读回。',
         usageTitle: '用法与说明',
         template: '用 web_ai_discuss 和 DeepSeek 讨论：',
         copy: '复制调用模板',
@@ -72,26 +72,26 @@ window.__ModuleLoader__.load({
         placementEmpty: '两个入口至少要勾一处，否则面板将无处可打开。',
         guardTitle: '三重护栏（不可关闭）',
         guards: [
-          ['全局串行', '同一时刻只允许一次讨论，并发调用立刻返回 code=busy'],
-          ['随机最小间隔', '两次讨论之间至少 7 秒，再加 0–3 秒随机抖动'],
+          ['全局串行', '并发调用直接返回 code=busy'],
+          ['随机最小间隔', '两次之间至少 7 秒，再加 0–3 秒抖动'],
           ['窗口频率上限', '每 60 分钟最多 6 次，超额返回 code=rate_limited'],
         ],
         codesTitle: '返回码',
         codes: [
-          ['ok', '拿到回答，answer 为清洗后的原文'],
-          ['unauthorized', '网页端需要人接管，浏览器已交给用户；不在对话里转述登录'],
+          ['ok', 'answer 为原文'],
+          ['unauthorized', '网页端需要人，浏览器已交给用户'],
           ['busy', '已有讨论在跑'],
-          ['rate_limited', '窗口内次数用尽，带 retryAfterMs'],
-          ['unavailable', '本机找不到 ego-browser'],
-          ['timeout', '等到超时仍没等到可判定完成的回答'],
-          ['send_failed', '三次发送确认都没送达，快速失败不空等'],
+          ['rate_limited', '次数用尽，带 retryAfterMs'],
+          ['unavailable', '找不到 ego-browser'],
+          ['timeout', '超时仍未完成'],
+          ['send_failed', '三次发送确认都没送达'],
         ],
         limitsTitle: '已知限制',
         limits: [
-          '依赖本机 ego-browser CLI（无 MCP 形态），插件以子进程方式调用它',
-          '讨论空间在 ego 里保持存活以便追问，插件刻意不调用 finish',
-          '护栏作用域是插件进程，跨进程并发不在保护范围内',
-          '网页改版会影响 DOM 选择器，届时需更新 lib/script.js',
+          '依赖本机 ego-browser CLI，以子进程方式调用',
+          'ego 空间保持存活以便追问，不调用 finish',
+          '护栏只覆盖插件进程内的并发',
+          '网页改版会破坏 DOM 选择器，需更新 lib/script.js',
         ],
         liveTitle: '运行状态',
         liveRefresh: '刷新',
@@ -129,9 +129,9 @@ window.__ModuleLoader__.load({
       : {
         panel: 'DeepSeek talk',
         title: 'External discussion channel',
-        lead: 'Pipes the logged-in DeepSeek web app in as an outside opinion. Every page interaction goes through the local ego lite engine: no protocol construction, no sign-in handling.',
-        when: 'Call it only for multi-angle discussion, reviews, option comparisons, or counter-examples. Not for everyday questions, fact lookups, or code completion.',
-        store: 'Records land in web-ai-discuss/ under the DSH storage directory; read them back with web_ai_read_discussion (id / search / live).',
+        lead: 'The DeepSeek web app as an outside opinion; page work runs through the local ego lite.',
+        when: 'For multi-angle reviews, option comparisons, counter-examples. Not for everyday questions or code completion.',
+        store: 'Records land in web-ai-discuss/; read them with web_ai_read_discussion.',
         usageTitle: 'Usage & notes',
         template: 'Use web_ai_discuss to discuss with DeepSeek: ',
         copy: 'Copy call template',
@@ -158,26 +158,26 @@ window.__ModuleLoader__.load({
         placementEmpty: 'Keep at least one entry ticked, or the panel has nowhere to open.',
         guardTitle: 'Three guardrails (not disableable)',
         guards: [
-          ['Global serial', 'One discussion at a time; a concurrent call returns code=busy'],
-          ['Random minimum gap', 'At least 7s plus 0-3s jitter between discussions'],
-          ['Window quota', 'At most 6 discussions per 60 minutes; beyond that code=rate_limited'],
+          ['Global serial', 'A concurrent call returns code=busy'],
+          ['Random minimum gap', 'At least 7s plus 0-3s jitter'],
+          ['Window quota', 'At most 6 per 60 minutes, else code=rate_limited'],
         ],
         codesTitle: 'Codes',
         codes: [
-          ['ok', 'Answer captured and cleaned in answer'],
-          ['unauthorized', 'The page needs a human; control was handed off, no sign-in text emitted'],
-          ['busy', 'A discussion is already running'],
-          ['rate_limited', 'Window quota exhausted, carries retryAfterMs'],
-          ['unavailable', 'ego-browser not found on this machine'],
-          ['timeout', 'No completable answer before the deadline'],
-          ['send_failed', 'Three send confirmations failed; fast fail, no dead wait'],
+          ['ok', 'answer holds the text'],
+          ['unauthorized', 'The page needs a human; control handed off'],
+          ['busy', 'A discussion is running'],
+          ['rate_limited', 'Quota exhausted, carries retryAfterMs'],
+          ['unavailable', 'ego-browser not found'],
+          ['timeout', 'No completable answer in time'],
+          ['send_failed', 'Three send confirmations failed'],
         ],
         limitsTitle: 'Known limits',
         limits: [
-          'Depends on the local ego-browser CLI (no MCP form); invoked as a child process',
-          'The discussion space stays alive for follow-ups; the plugin never calls finish',
-          'Guardrails are process-scoped; cross-process concurrency is out of scope',
-          'Web redesigns can break the DOM selectors in lib/script.js',
+          'Depends on the local ego-browser CLI, run as a child process',
+          'The ego space stays alive for follow-ups; finish is never called',
+          'Guardrails cover in-process concurrency only',
+          'Web redesigns break the DOM selectors in lib/script.js',
         ],
         liveTitle: 'Runtime status',
         liveRefresh: 'Refresh',
@@ -225,6 +225,8 @@ window.__ModuleLoader__.load({
   flex-direction: column;
   min-height: 0;
 }
+/* better-sidebar 的 tab 体给的是整块面板高度；这里撑满，不留白边 */
+.wai-bs { height: 100%; min-height: 0; display: flex; flex-direction: column; }
 .wai-root {
   flex: 1 1 auto;
   min-height: 0;
@@ -1105,6 +1107,20 @@ window.__ModuleLoader__.load({
         out.bodyAttrs = document.body ? Array.from(document.body.attributes).map((a) => a.name + '=' + a.value).slice(0, 12) : [];
       } catch (e) { out.varsError = String((e && e.message) || e); }
 
+      // 5) better-sidebar 集成：「装了但侧边栏里没有」这类问题只能靠这个量
+      try {
+        const svc = ctx && ctx.betterSidebar;
+        const tabs = svc && typeof svc.getTabs === 'function' ? svc.getTabs() : null;
+        out.betterSidebar = {
+          service: !!svc,
+          registerTab: !!(svc && typeof svc.registerTab === 'function'),
+          registered: Array.isArray(tabs)
+            ? tabs.map((d) => d && d.id).filter(Boolean).slice(0, 20)
+            : null,
+          hasMine: Array.isArray(tabs) ? tabs.some((d) => d && d.id === PANEL_ID) : null,
+        };
+      } catch (e) { out.betterSidebarError = String((e && e.message) || e); }
+
       return out;
     }
 
@@ -1840,6 +1856,14 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'wai-shell' }, h('div', { className: 'wai-root' }, h(PanelContent, {})));
     }
 
+    /**
+     * better-sidebar 底座里的一页。容器高度由宿主的 tab 体给出，
+     * 这里只负责把它撑满并沿用同一套 .wai-* 样式。
+     */
+    function BetterSidebarPanel(props) {
+      return h('div', { className: 'wai-bs' }, h(Panel, props));
+    }
+
     // ── 入口位置（placement / composerDock，可经设置表单修改）──
     const LS_KEY = 'dsh-web-ai-discuss:ui';
     function readCachedUi() {
@@ -1850,7 +1874,8 @@ window.__ModuleLoader__.load({
           return { placement: v.placement, composerDock: v.composerDock === true };
         }
       } catch (e) { /* 回落默认 */ }
-      return { placement: 'sidebar', composerDock: false };
+      // 与宿主侧 resolveConfig 的默认值保持一致：两处都显示，避免"装了却找不到入口"
+      return { placement: 'both', composerDock: false };
     }
     function writeCachedUi(v) {
       try {
@@ -1874,6 +1899,36 @@ window.__ModuleLoader__.load({
     let ctx = null;
     // apply 里赋值的"重读显示位置并可能重挂入口"回调；SettingsForm 保存成功后调用
     let uiReload = null;
+
+    /**
+     * 向 dsh-better-sidebar 注册一页（可选集成）。
+     *
+     * 契约来自该插件 docs/external-plugin-guide.md：
+     *   ctx.betterSidebar.registerTab(descriptor) → disposer，且必须包在 ctx.effect 里，
+     *   否则 HMR / 禁用后注册残留，下次激活抛 already registered。
+     * 该服务只在它的 client half 提供；未安装时 ctx.betterSidebar 为 undefined，跳过即可，
+     * 因此本插件不把它写进 inject（写进去会让整个插件在没装它时无法激活）。
+     */
+    function registerBetterSidebar(pluginCtx, collect) {
+      const svc = pluginCtx && pluginCtx.betterSidebar;
+      if (!svc || typeof svc.registerTab !== 'function') return;
+      const descriptor = {
+        id: PANEL_ID,
+        title: () => T.panel,
+        description: () => T.when,
+        icon: (size) => SidebarIcon({ size: size || 16, active: false }),
+        order: 46,
+        single: true,
+        component: BetterSidebarPanel,
+      };
+      try {
+        const register = () => svc.registerTab(descriptor);
+        const off = typeof pluginCtx.effect === 'function'
+          ? pluginCtx.effect(register)
+          : register();
+        if (typeof off === 'function') collect(off);
+      } catch (e) { /* 底座版本不符就退回本插件自己的入口 */ }
+    }
 
     function apply(pluginCtx) {
       ctx = pluginCtx;
@@ -1913,6 +1968,10 @@ window.__ModuleLoader__.load({
             }, ComposerChip)));
           }
         }
+        // better-sidebar 底座：装了就在这里多一页。
+        // 不受 placement 约束——那是宿主自己侧边栏/设置页的入口位置，而这是第三方底座的页面；
+        // 用户想关掉它，用 better-sidebar 设置页给每个注册页提供的开关（那是它自己的契约）。
+        registerBetterSidebar(pluginCtx, (d) => disposers.push(d));
         if (inSettings) {
           disposers.push(pluginCtx.slots.inject('settings.section', () => pluginCtx.slots.register({
             name: 'settings.section',

@@ -156,7 +156,7 @@ plugin_manager({ action: 'install_bundle', target: '<绝对路径>/dsh-web-ai-di
                  "levels": [ { "id": "light", "title": "轻", "template": "…" },
                              { "id": "normal", "title": "标准", "template": "…" },
                              { "id": "strict", "title": "严", "template": "…" } ] } ],
-  "effective": { "minGapMs": 7000, "placement": "sidebar", "…": "…" }
+  "effective": { "minGapMs": 7000, "placement": "both", "…": "…" }
 }
 ```
 
@@ -187,11 +187,37 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
 | 中央面板 `main` | 标题 + 构建戳 `build x.y.z`、定位说明、**三个分区 Tab**：<br>· **概览**：运行状态块（窗口用量 / ego 空间 / 记录数 / 总调用）、调用模板（一键复制）、`用法与说明`（三重护栏 / 返回码 / 已知限制）<br>· **预设**：档位分段控件（轻 / 标准 / 严）+ 8 条预设（可「看模板」「复制调用」）<br>· **设置**：自定义设置表单 |
 | 会话工具卡片 | 每次 `web_ai_discuss` 的结果卡片：返回码徽章、耗时、`discussionId`（可直接传给 `followUp`）、附件文件名、回答原文、一键复制回答；失败态显示 `reason` / `message` / 半成品 `partial` |
 | 设置页分区 | `placement` 含 `settings` 时，在设置里占一页；此处**不分区**（表单铺开，设置项必须一眼可见） |
+| better-sidebar 页 | 装了 `dsh-better-sidebar` 时额外注册一页（见下节），与上述入口并存 |
 | 输入框下方 | `composerDock=true` 且 `placement` 含侧边栏时，输入框下方多一个快捷入口 |
 
 `placement`（`sidebar` / `settings` / `both`）在界面上是两个**独立勾选框**（侧边栏图标 / 设置页分区），
 勾选组合与枚举一一映射：都勾 = `both`，只勾前者 = `sidebar`，只勾后者 = `settings`。
 两个都不勾没有对应枚举值，保存时就地拦下并提示（`placementEmpty`），不会写入半截状态。
+默认值是 `both`——两处都给入口，避免「装了插件却找不到入口」。
+
+### dsh-better-sidebar 集成（可选）
+
+`dsh-better-sidebar` 是一个开放的侧边栏底座，对外暴露 `ctx.betterSidebar.registerTab`。
+本插件装了它时会额外注册一页，与插件自己的 `sidebar.panellist` 格子互不影响。
+
+三条契约（来自它的 `docs/external-plugin-guide.md`）：
+
+1. **`ctx.betterSidebar` 只在它的 client half 存在**，且**不能**写进本插件的 `inject` ——
+   写进去会让本插件在没装它的机器上整个不激活。当前实现是运行时探测：服务缺失就跳过注册。
+2. **注册必须包在 `ctx.effect` 里**。`registerTab` 返回 disposer，由 fiber 在 HMR / 禁用时调用；
+   不包 effect 会留下残留注册，下次激活抛 `already registered`。
+3. `TabDescriptor` 的关键字段：`id`（也是 `SidebarTab.type`）、`title`/`description`（可为函数，跟随语言）、
+   `icon`、`order`、`single: true`（打开时聚焦已有页而不是新开）、`component`。
+   它的 guide 列表**只在条目 ≤ 4 条时渲染 description**，所以别把关键信息只放那里。
+
+注册状态可在 `/web-ai-discuss/api/diag` 的 `betterSidebar` 段核实：
+
+```json
+{ "service": true, "registerTab": true, "registered": ["explorer", "git", "web-ai-discuss"],
+  "hasMine": true }
+```
+
+`service: false` = 没装或没启用；`hasMine: false` = 注册被跳过（看 `betterSidebarError`）。
 
 **为什么侧边栏用 Tab 而不是一路铺开**：宿主侧边栏只有 ~340px 宽，铺开会让人为了看一眼
 预设或设置一路往下翻（实测反馈）。改成三个分区后，首屏只留概览，窄栏里**每个分区都在一两屏内看完**。
@@ -319,7 +345,7 @@ chrome --headless=new --no-sandbox --disable-gpu --hide-scrollbars \
 
 | 字段 | 含义 | 约束 |
 |---|---|---|
-| `placement` | **插件显示位置**：`sidebar`（仅侧边栏图标）/ `settings`（仅设置页分区）/ `both` | 保存后几秒内自动挪动入口，或刷新页面立即生效；会话里的结果卡片不受影响 |
+| `placement` | **插件显示位置**：`sidebar`（仅侧边栏图标）/ `settings`（仅设置页分区）/ `both`（默认，两处都显示） | 保存后几秒内自动挪动入口，或刷新页面立即生效；会话里的结果卡片不受影响 |
 | `composerDock` | 主界面输入框下方显示 `◈ DeepSeek 讨论` 快捷入口 | 仅在 placement 含侧边栏时有效 |
 | `minGapMs` / `jitterMs` / `windowMs` / `windowLimit` | 三重护栏的间隔 / 抖动 / 窗口 / 上限 | 护栏下限钳制，**关不掉** |
 | `pollMs` / `stableSamples` | 轮询间隔 / 判完成的连续稳定采样数 | 下限 500ms / 2 次 |

@@ -23,10 +23,9 @@ export const name = PLUGIN_NAME;
 export const inject = ['tools'];
 
 const GUIDANCE = [
-  'web_ai_discuss 是可选的外部讨论通道：只有在需要多角度评审、方案对比、找反例或验证思路时才使用；',
-  '日常问答、事实查询、代码补全等用你自己的能力直接完成。',
-  '它受全局串行、随机最小间隔与频率上限三重护栏约束，code=busy / code=rate_limited 说明护栏生效，等一会再试或直接继续手头工作。',
-  'code=unauthorized 表示网页端需要人接管，浏览器已交给用户；不要转述登录或引导登录，按结构化结果继续。',
+  'web_ai_discuss：多角度评审、方案对比、找反例时才用；日常问答与代码补全自己做。',
+  'code=busy / code=rate_limited 是护栏生效，稍后重试或继续手头工作。',
+  'code=unauthorized 表示网页端需要人接管，不转述登录，按结构化结果继续。',
 ].join('');
 
 /** 设置 API 的响应辅助。 */
