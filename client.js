@@ -53,7 +53,7 @@ window.__ModuleLoader__.load({
         empty: '这次调用没有带回内容。',
         copied: '已复制',
         settingsTitle: '自定义设置',
-        settingsHint: '写入 settings.json，叠加在 patch 默认值之上，保存即生效。护栏只能往上调；egoPath / storeDir / 空间名这类定位字段仍只走 cordis.patch.yml。',
+        settingsHint: '写入 settings.json，保存即生效。护栏只能往上调；egoPath / storeDir / 空间名仍只走 cordis.patch.yml。',
         settingsLoading: '读取设置…',
         settingsLoadFail: '读取设置失败（宿主路由未挂载？）',
         settingsRetry: '重试',
@@ -71,7 +71,7 @@ window.__ModuleLoader__.load({
         placementLabel: '入口位置',
         placementOpts: { sidebar: '侧边栏图标', settings: '设置页分区', both: '两处都显示' },
         dockLabel: '输入框下方快捷入口',
-        placementNote: '保存后几秒内自动挪动入口，或刷新页面立即生效。会话里的结果卡片不受位置影响。',
+        placementNote: '保存后几秒内自动挪动入口或刷新页面生效；结果卡片不受影响。',
         guardTitle: '三重护栏（不可关闭）',
         guards: [
           ['全局串行', '同一时刻只允许一次讨论，并发调用立刻返回 code=busy'],
@@ -141,7 +141,7 @@ window.__ModuleLoader__.load({
         empty: 'This call returned no content.',
         copied: 'Copied',
         settingsTitle: 'Settings',
-        settingsHint: 'Saved to settings.json on top of patch defaults, applied live. Guardrails only move upward; egoPath / storeDir / space name stay patch-file only.',
+        settingsHint: 'Saved to settings.json, applied live. Guardrails only move upward; egoPath / storeDir / space name stay patch-file only.',
         settingsLoading: 'Loading settings…',
         settingsLoadFail: 'Failed to load settings (host route not mounted?)',
         settingsRetry: 'Retry',
@@ -159,7 +159,7 @@ window.__ModuleLoader__.load({
         placementLabel: 'Entry placement',
         placementOpts: { sidebar: 'Sidebar icon', settings: 'Settings section', both: 'Both' },
         dockLabel: 'Composer chip',
-        placementNote: 'Takes effect within seconds after saving, or right away after a page refresh. Result cards in the conversation are unaffected.',
+        placementNote: 'Moves within seconds of saving, or on refresh. Result cards are unaffected.',
         guardTitle: 'Three guardrails (not disableable)',
         guards: [
           ['Global serial', 'One discussion at a time; a concurrent call returns code=busy'],
@@ -219,22 +219,44 @@ window.__ModuleLoader__.load({
 
     /* @wai-css-start */
     const CSS = `
-.wai-root {
+/* 容器查询锚点。@container 只匹配容器的后代，所以必须有这层 shell：
+   把 container-type 放在 .wai-root 上，里面所有「.wai-root { ... }」窄栏规则都会失效。 */
+.wai-shell {
   container-type: inline-size;
   container-name: wai;
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.wai-root {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
   overflow-y: auto;
-  padding: 22px 26px 36px;
+  padding: 22px 26px var(--wai-pad-b, 36px);
   font: inherit;
   font-size: 13px;
   line-height: 1.65;
   color: var(--dsw-alias-label-primary, #1a1a1a);
   -webkit-font-smoothing: antialiased;
-  --wai-surface: var(--dsw-alias-bg-layer-1, transparent);
+  --wai-pad-b: 36px;
+}
+/* 结果卡片挂在 tool.call.toolview，不在 .wai-root 里，令牌必须单独给一份：
+   写在 .wai-root 上的自定义属性不会被兄弟节点继承。 */
+.wai-root,
+.wai-card {
+  --wai-surface: color-mix(in srgb, var(--dsw-alias-label-primary, #1a1a1a) 3%, var(--dsw-alias-bg-layer-1, transparent));
   --wai-surface-strong: color-mix(in srgb, var(--dsw-alias-label-primary, #1a1a1a) 8%, transparent);
 }
 .wai-root * { box-sizing: border-box; }
-.wai-wrap { max-width: 68ch; }
+/* 面板不是文章：结构块（指标、预设、字段）铺满可用宽度，
+   只给成段的文字按 72ch 封顶，避免整块内容挤在左半边。 */
+.wai-wrap { max-width: 100%; }
+
+/* 宽栏别让正文段落拉成超长单行，按舒适阅读宽度收口 */
+.wai-text,
+.wai-list > li { max-width: 72ch; }
 
 /* ── 分区切换（Tab）── */
 .wai-tabs {
@@ -324,13 +346,6 @@ window.__ModuleLoader__.load({
   background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.1));
   font-variant-numeric: tabular-nums;
 }
-.wai-lead {
-  margin: 8px 0 0;
-  font-size: 13px;
-  line-height: 1.7;
-  color: var(--dsw-alias-label-secondary, #61666b);
-}
-
 /* ── 何时调用（静默提示块）── */
 .wai-note {
   margin: 16px 0 0;
@@ -442,6 +457,15 @@ window.__ModuleLoader__.load({
 
 /* ── 按钮 ── */
 .wai-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+/* 设置够长，保存条吸在底部，不用为点一下按钮再滚回去 */
+.wai-actions-sticky {
+  position: sticky;
+  bottom: calc(-1 * var(--wai-pad-b, 36px));
+  margin: 14px -12px calc(-1 * var(--wai-pad-b, 36px));
+  padding: 10px 12px calc(10px + var(--wai-pad-b, 36px));
+  background: var(--dsw-alias-bg-base, transparent);
+  border-top: .5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+}
 .wai-btn {
   font: inherit;
   font-size: 12.5px;
@@ -492,6 +516,7 @@ window.__ModuleLoader__.load({
 .wai-btn-ghost:hover { color: var(--dsw-alias-label-primary, #1a1a1a); }
 
 /* ── 设置表单 ── */
+.wai-fields { display: grid; grid-template-columns: minmax(0, 1fr); }
 .wai-field {
   display: grid;
   grid-template-columns: minmax(120px, max-content) minmax(0, 170px) minmax(0, max-content);
@@ -603,8 +628,8 @@ window.__ModuleLoader__.load({
   font-variant-numeric: tabular-nums;
 }
 .wai-live-list { margin: 8px 0 0; padding: 0; list-style: none; }
-.wai-live-recent { margin-top: 10px; }
-.wai-live-recent-toggle { min-height: 24px; padding: 2px 8px; font-size: 11.5px; }
+.wai-live-recent { margin-top: 8px; }
+.wai-live-recent-toggle { margin-left: -9px; min-height: 24px; padding: 2px 8px; font-size: 11.5px; }
 .wai-live-list li {
   display: flex;
   gap: 10px;
@@ -741,8 +766,8 @@ window.__ModuleLoader__.load({
   gap: 5px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 11.5px;
-  line-height: 1.4;
-  padding: 1px 8px 1px 6px;
+  line-height: 1.15;
+  padding: 4px 9px 4px 7px;
   border-radius: 999px;
   color: var(--dsw-alias-label-primary, #0f1115);
   background: var(--wai-surface-strong);
@@ -766,11 +791,12 @@ window.__ModuleLoader__.load({
 }
 .wai-muted { font-size: 12px; color: var(--dsw-alias-label-secondary, #61666b); }
 .wai-text {
-  margin: 0 0 2px;
+  margin: 0 0 10px;
   font-size: 12.5px;
   line-height: 1.7;
   color: var(--dsw-alias-label-secondary, #61666b);
 }
+.wai-text:last-child { margin-bottom: 0; }
 .wai-muted + .wai-muted { margin-top: 4px; }
 
 /* ── 浏览器表面 ── */
@@ -795,18 +821,57 @@ window.__ModuleLoader__.load({
 }
 
 @container wai (max-width: 460px) {
-  .wai-root { padding: 16px 16px 26px; }
-  .wai-field { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .wai-root { padding: 16px 16px var(--wai-pad-b, 26px); --wai-pad-b: 26px; }
+  .wai-field {
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr) minmax(0, max-content);
+    gap: 2px 8px;
+    padding: 5px 0;
+  }
+  .wai-field-hint { font-size: 11px; }
+  .wai-input { min-height: 28px; padding: 4px 8px; }
+  .wai-note { margin-top: 12px; padding: 9px 11px; font-size: 12px; line-height: 1.6; }
   .wai-input-wide { grid-column: 1 / -1; }
+  .wai-section-label { margin: 14px 0 2px; padding-top: 10px; }
   .wai-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .wai-row-k { font-weight: 600; }
-  .wai-preset { grid-template-columns: minmax(0, 1fr); }
-  .wai-preset-action { grid-column: 1; grid-row: auto; justify-self: start; margin-top: 6px; }
+  .wai-preset { column-gap: 8px; row-gap: 1px; padding: 8px 0; }
+  .wai-preset-action { gap: 2px; }
+  .wai-preset-action .wai-btn { padding: 4px 6px; font-size: 11.5px; }
   .wai-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
   .wai-tabs { margin-top: 12px; }
   .wai-level-bar { gap: 8px; }
   .wai-level-hint { flex: 1 1 100%; margin-top: -2px; }
   .wai-seg-item { padding: 4px 10px; }
+}
+/* 主面板这类宽栏：设置项排两列，别让右半屏一直空着 */
+@container wai (min-width: 620px) {
+  .wai-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 28px;
+  }
+  .wai-fields .wai-field {
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr) minmax(0, max-content);
+    gap: 2px 8px;
+  }
+  .wai-fields .wai-field-wide { grid-column: 1 / -1; }
+
+  /* 三个页签不必均分整屏：按内容收口，读起来像一段分段控件 */
+  .wai-tabs { display: inline-flex; }
+  .wai-tab { flex: 0 1 auto; padding-left: 18px; padding-right: 18px; }
+
+  /* 说明块按舒适阅读宽度收口，不横贯整屏拉成一条长句 */
+  .wai-note { max-width: 78ch; }
+
+  /* 预设行合成单行：id/名称 → 说明 → 操作，说明吃掉中间空档 */
+  .wai-preset {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto;
+    column-gap: 14px;
+    row-gap: 0;
+  }
+  .wai-preset-hint { grid-column: 2; grid-row: 1; align-self: baseline; }
+  .wai-preset-action { grid-column: 3; grid-row: 1; }
+  .wai-preset-more { grid-column: 1 / -1; grid-row: 2; }
 }
 @media (prefers-reduced-motion: reduce) {
   .wai-caret, .wai-btn, .wai-input, .wai-fold > summary { transition: none; }
@@ -1236,7 +1301,7 @@ window.__ModuleLoader__.load({
           return h('div', { key: gk },
             h('div', { className: 'wai-section-label' }, label),
             gk === 'ui' ? h('div', { className: 'wai-muted', style: { marginBottom: 4 } }, T.placementNote) : null,
-            fields.map((f) => {
+            h('div', { className: 'wai-fields' }, fields.map((f) => {
               const v = effective[f.key];
               if (f.kind === 'bool') {
                 return h('div', { className: 'wai-field', key: f.key },
@@ -1257,7 +1322,7 @@ window.__ModuleLoader__.load({
                   h('span', null));
               }
               if (f.kind === 'text') {
-                return h('div', { className: 'wai-field', key: f.key },
+                return h('div', { className: 'wai-field wai-field-wide', key: f.key },
                   h('span', { className: 'wai-field-label' }, zh ? f.zh : f.en),
                   h('input', {
                     className: 'wai-input wai-input-wide',
@@ -1280,9 +1345,9 @@ window.__ModuleLoader__.load({
                   ref: bindRef(f.key),
                 }),
                 h('span', { className: 'wai-field-hint' }, floorHint || f.unit || ''));
-            }));
+            })));
         }),
-        h('div', { className: 'wai-actions' },
+        h('div', { className: 'wai-actions wai-actions-sticky' },
           h('button', {
             className: 'wai-btn wai-btn-primary',
             disabled: saveState.phase === 'saving',
@@ -1698,6 +1763,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'wai-actions' },
           h('button', { className: 'wai-btn', onClick: copy }, copied ? T.copied : T.copy)),
         h(Fold, { title: T.usageTitle },
+          h('p', { className: 'wai-text' }, T.lead),
           h('p', { className: 'wai-text' }, T.store),
           h('div', { className: 'wai-section-label' }, T.guardTitle),
           h('div', null, T.guards.map(([k, d]) => h('div', { className: 'wai-row', key: k },
@@ -1722,7 +1788,6 @@ window.__ModuleLoader__.load({
         h('div', { className: 'wai-head' },
           h('h1', { className: 'wai-h1' }, T.title),
           h('span', { className: 'wai-build' }, `build ${CLIENT_BUILD}`)),
-        h('p', { className: 'wai-lead' }, T.lead),
         h('div', { className: 'wai-note' }, T.when),
       ];
       if (flat) {
@@ -1730,6 +1795,7 @@ window.__ModuleLoader__.load({
           ...head,
           h(LiveStatus, {}),
           h(Fold, { title: T.usageTitle },
+            h('p', { className: 'wai-text' }, T.lead),
             h('p', { className: 'wai-text' }, T.store),
             h('div', { className: 'wai-section-label' }, T.guardTitle),
             h('div', null, T.guards.map(([k, d]) => h('div', { className: 'wai-row', key: k },
@@ -1757,7 +1823,7 @@ window.__ModuleLoader__.load({
     }
 
     function Panel() {
-      return h('div', { className: 'wai-root' }, h(PanelContent, {}));
+      return h('div', { className: 'wai-shell' }, h('div', { className: 'wai-root' }, h(PanelContent, {})));
     }
 
     // ── 入口位置（placement / composerDock，可经设置表单修改）──
@@ -1839,7 +1905,7 @@ window.__ModuleLoader__.load({
             id: PANEL_ID,
             order: 55,
             label: () => T.panel,
-          }, () => h('div', { className: 'wai-root', style: { height: 'auto' } }, h(PanelContent, { mode: 'flat' })))));
+          }, () => h('div', { className: 'wai-shell', style: { height: 'auto' } }, h('div', { className: 'wai-root', style: { height: 'auto' } }, h(PanelContent, { mode: 'flat' }))))));
         }
       };
       mount();
