@@ -1108,10 +1108,8 @@ window.__ModuleLoader__.load({
       } catch (e) { out.varsError = String((e && e.message) || e); }
 
       // 5) better-sidebar 集成：「装了但侧边栏里没有」这类问题只能靠这个量。
-      // 注意 ctx 是 Proxy：读没 inject 的服务名会 throw，探测必须整体在 try 里。
       try {
-        let svc = null;
-        try { svc = ctx ? ctx.betterSidebar : null; } catch (e) { svc = null; }
+        const svc = probeService(ctx, 'betterSidebar');
         const tabs = svc && typeof svc.getTabs === 'function' ? svc.getTabs() : null;
         out.betterSidebar = {
           service: !!svc,
@@ -1908,26 +1906,38 @@ window.__ModuleLoader__.load({
     const bsState = { registered: null, error: null };
 
     /**
+     * 安全探测一个可选服务。
+     *
+     * cordis 的 Context 是 Proxy：`ctx.foo` 对没 inject 的服务名会直接抛
+     * `cannot get property "foo" without inject`，**不是**返回 undefined。
+     * 官方的安全通道是 `ctx.reflect.get(name, false)`——非严格模式下缺服务返回 undefined。
+     * 拿不到 reflect（早期宿主或测试桩）时退回 try/catch 探测。
+     */
+    function probeService(pluginCtx, name) {
+      try {
+        const reflect = pluginCtx && pluginCtx.reflect;
+        if (reflect && typeof reflect.get === 'function') {
+          const svc = reflect.get(name, false);
+          if (svc) return svc;
+        }
+      } catch (e) { /* 没有 reflect，继续走下面的兜底 */ }
+      try {
+        return pluginCtx ? pluginCtx[name] : undefined;
+      } catch (e) {
+        return undefined;
+      }
+    }
+
+    /**
      * 向 dsh-better-sidebar 注册一页（可选集成）。
      *
      * 契约来自该插件 docs/external-plugin-guide.md：
      *   ctx.betterSidebar.registerTab(descriptor) → disposer，且必须包在 ctx.effect 里，
      *   否则 HMR / 禁用后注册残留，下次激活抛 already registered。
-     *
-     * 这里有个必须记住的坑：**cordis 的 Context 是 Proxy，读一个没 inject 的服务名会直接 throw**
-     * （`cannot get property "xxx" without inject`），不是返回 undefined。所以服务探测本身
-     * 就必须在 try 里——写在外面会让 apply() 整个抛异常，插件根本不挂载。
+     * 服务探测走 probeService（Proxy 会抛，详见那里的注释）。
      */
     function registerBetterSidebar(pluginCtx, collect) {
-      let svc = null;
-      try {
-        svc = pluginCtx.betterSidebar;
-      } catch (e) {
-        // 没装 / 没启用：Proxy 拒答，按「未集成」处理
-        bsState.registered = false;
-        bsState.error = null;
-        return;
-      }
+      const svc = probeService(pluginCtx, 'betterSidebar');
       if (!svc || typeof svc.registerTab !== 'function') {
         bsState.registered = false;
         bsState.error = null;

@@ -617,6 +617,18 @@ const ctxProxy = (base, present) => new Proxy(base, {
     return undefined;
   },
 });
+// 真宿主的文档通道：ctx.reflect.get(name, false) 缺服务时返回 undefined 而不是抛。
+// 测试桩必须带上它，否则只测到 try/catch 兜底那条路。
+const withReflect = (base, present) => {
+  base.reflect = {
+    get(name, strict = true) {
+      if (present.includes(name) && base[name] !== undefined) return base[name];
+      if (strict) throw new Error(`cannot get property "${name}" without inject`);
+      return undefined;
+    },
+  };
+  return ctxProxy(base, [...present, 'reflect']);
+};
 
 {
   const realDocument = globalThis.document;
@@ -626,7 +638,7 @@ const ctxProxy = (base, present) => new Proxy(base, {
   // 1) 没装：Proxy 拒答 bestterSidebar，apply 不得抛
   {
     const offs = [];
-    const bare = ctxProxy({
+    const bare = withReflect({
       slots: { inject: (n, cb) => { cb(); return () => {}; }, register: () => () => {} },
       layout: { selectPanel() {} },
       effect(setup) { const d = setup(); offs.push(d); return d; },
@@ -644,7 +656,7 @@ const ctxProxy = (base, present) => new Proxy(base, {
     const tabs = [];
     const offs = [];
     let effectCalls = 0;
-    const withSidebar = ctxProxy({
+    const withSidebar = withReflect({
       slots: { inject: (n, cb) => { cb(); return () => {}; }, register: () => () => {} },
       layout: { selectPanel() {} },
       effect(setup) { effectCalls += 1; const d = setup(); offs.push(d); return d; },
@@ -664,7 +676,7 @@ const ctxProxy = (base, present) => new Proxy(base, {
     check('better-sidebar：注册包在 ctx.effect 里（HMR 可撤销）', effectCalls >= 1, effectCalls);
 
     // 重名注册会抛 already registered：必须记进 diag，而不是静默失败。
-    const dup = ctxProxy({
+    const dup = withReflect({
       slots: { inject: (n, cb) => { cb(); return () => {}; }, register: () => () => {} },
       layout: { selectPanel() {} },
       effect(setup) { const d = setup(); offs.push(d); return d; },
