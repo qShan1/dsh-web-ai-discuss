@@ -862,6 +862,9 @@ window.__ModuleLoader__.load({
   /* 说明块按舒适阅读宽度收口：铺满整屏会让一句话占掉一条长条空盒 */
   .wai-note { max-width: 72ch; }
 
+  /* 四个指标：均分但给整条设上限，既不把 "2/6" 和 "11" 拉到隔屏相望，也不挤在左半边 */
+  .wai-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); max-width: 620px; }
+
   /* 预设行合成单行：id/名称 → 说明 → 操作，说明吃掉中间空档 */
   .wai-preset {
     grid-template-columns: auto minmax(0, 1fr) auto;
