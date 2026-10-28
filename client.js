@@ -1049,8 +1049,9 @@ window.__ModuleLoader__.load({
 
     /** 把诊断结果 POST 回宿主侧（宿主进程内存里存一份，供外部读取）。 */
     function reportDiag() {
+      let payload = null;
       try {
-        const payload = collectDiag();
+        payload = collectDiag();
         fetch('/web-ai-discuss/api/diag', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
