@@ -199,6 +199,15 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
 - 亮/暗两套主题都做过实测，`impeccable detect` 对渲染产物 **0 告警**（正文对比度 ≥4.5:1，最小字号 11.5px 仅用于等宽 id / 数字）；
 - **窄栏用容器查询而非媒体查询**：宿主面板按容器宽度布局（侧边栏 340px 也能用），`@container wai (max-width: 460px)` 负责单列化，媒体查询在宿主里不生效；
   窄栏下指标网格固定两列（避免 3+1 的孤儿列）、档位说明另起一行；
+- **容器查询锚点必须在 `.wai-shell` 上，不能在 `.wai-root` 上**：`@container` 只匹配容器的**后代**，规则写在自己身上一条都不会命中。
+  所以 `Panel` 渲染的是 `.wai-shell`（`container-type: inline-size` / `container-name: wai`）包一层 `.wai-root`（纯滚动容器）。
+  早期把 `container-type` 直接放在 `.wai-root` 上，于是所有 `.wai-root { padding }` 之类的窄栏覆写全部静默失效 —— 这类 bug 不会报错，只会「看着没生效」；
+- **宽度策略：结构块铺满，成段文字按 72ch 收口**。`.wai-wrap` 是 `max-width: 100%`（不再是 `68ch`），
+  指标网格、预设行、设置字段这些结构块用满可用宽度；只有 `.wai-text` / `.wai-list > li` 这类整段说明文字按 `72ch` 封顶，
+  避免宽栏下正文被拉成超长单行。宽栏（`@container wai (min-width: 620px)`）额外把设置项排成两列、`.wai-field-wide`（Webhook URL / 钩子模块）跨整行、
+  Tab 条按内容收口、预设行合成单行（id/名称 → 说明 → 操作）；
+- **保存条吸底**：`.wai-actions-sticky` 用 `bottom: calc(-1 * var(--wai-pad-b))` + 等值负 margin 把底边贴平滚动区，
+  设置很长时不用滚回去点保存；`--wai-pad-b` 在窄栏覆写为 26px，两个方向同时跟着变，不会留一条横贯的白带；
 - 交互状态（hover / focus-visible / active / disabled / 选中 / 滚动条 / 选区）由注入的命名空间 CSS `.wai-*` 承担，不覆盖宿主选择器；
 - 首屏零额外网络：概览只读一次 `/status`，预设与设置分区**切过去才挂载并 fetch**；
 - 输入框全部非受控，输入不触发 React 渲染；工具卡片 `React.memo` + `WeakMap` 缓存解析结果。
@@ -270,7 +279,7 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
 
 ```bash
 node test/render.mjs     # 用真实组件函数渲染静态页到 out/panel*.html（亮/暗 × 概览/展开/预设/设置 六种）
-node test/client.mjs     # 桩 React 加载真实 client.js：slot 注册、文案、渲染、Tab 切换、位置切换 49 条断言
+node test/client.mjs     # 桩 React 加载真实 client.js：slot 注册、文案、渲染、Tab 切换、位置切换 58 条断言
 
 # 真截图（headless Chrome）
 chrome --headless=new --no-sandbox --disable-gpu --hide-scrollbars \
@@ -351,7 +360,7 @@ HTTP 契约（同源守卫，exact 路由 `/web-ai-discuss/api/settings`）：
 
 ```bash
 node test/cases.mjs    # 宿主侧契约与护栏，24/24
-node test/client.mjs   # 客户端注册与渲染（桩 React），49/49
+node test/client.mjs   # 客户端注册与渲染（桩 React），58/58
 node test/styles.mjs   # 样式注入回归（过期 <style> 必须被替换），10/10
 node test/render.mjs   # 离线渲染 out/panel*.html（亮/暗 × 概览/展开/预设/设置）
 node test/smoke.mjs status|probe|read|discuss "问题"   # 真实 ego 冒烟
