@@ -91,8 +91,11 @@ const STATUS_BODY = {
   space: { locked: false, holder: null },
   storeStats: { discussions: 12, oldestAt: '2026-10-25T02:00:00.000Z', newestAt: '2026-10-27T05:19:00.000Z' },
   recent: [
-    { id: 'd-20261027-131502-9a6b', title: '用一句话回答：8+8等于几？', createdAt: '2026-10-27T05:15:02.000Z', answerChars: 8 },
-    { id: 'd-20261027-130951-65f8', title: '用一句话回答：1+1等于几？', createdAt: '2026-10-27T05:09:51.000Z', answerChars: 7 },
+    // 覆盖四种相对时间分支：分钟前 / 小时前 / 天前 / 日期兜底
+    { id: 'd-20261027-131502-9a6b', title: '用一句话回答：8+8等于几？', createdAt: new Date(Date.now() - 3 * 60000).toISOString(), answerChars: 8 },
+    { id: 'd-20261027-130951-65f8', title: 'G001 开局节奏与威胁感', createdAt: new Date(Date.now() - 5 * 3600000).toISOString(), answerChars: 5386 },
+    { id: 'd-20261026-221045-a1b2', title: '布隆过滤器能不能替代缓存空值', createdAt: new Date(Date.now() - 2 * 86400000).toISOString(), answerChars: 274 },
+    { id: 'd-20261020-090000-77cd', title: '方案对比：定时轮询 vs 长轮询 vs SSE', createdAt: new Date(Date.now() - 9 * 86400000).toISOString(), answerChars: 1201 },
   ],
   effective: { placement: 'sidebar', composerDock: false },
   presets: [
@@ -201,8 +204,11 @@ function serialize(node) {
 
 const tick = () => new Promise((r) => setTimeout(r, 25));
 
-/** 渲染一次并跑完 effect（用于让设置表单从 loading 走到 ready）。 */
-async function renderStable(comp, props, { expanded, tab }) {
+/**
+ * 渲染一次并跑完 effect（用于让设置表单从 loading 走到 ready）。
+ * expanded：展开所有 Fold；showRecent：把 LiveStatus 的「最近讨论」也展开。
+ */
+async function renderStable(comp, props, { expanded, tab, showRecent }) {
   resetHooks();
   effects.length = 0;
   serialize(comp(props)); // 首帧：收集 effect，同时把组件实例建出来
@@ -210,6 +216,13 @@ async function renderStable(comp, props, { expanded, tab }) {
     // 把所有 Fold 实例的 open 状态置真（等价于用户手动展开每个折叠块）
     for (const [fn, rec] of instState) {
       if (fn.name !== 'Fold') continue;
+      for (const inst of rec.instances) if (inst.slots.length) inst.slots[0] = true;
+    }
+  }
+  if (showRecent) {
+    // LiveStatus 的第一个 useState 是 showRecent：置真等价于用户点了「最近讨论 (n) +」
+    for (const [fn, rec] of instState) {
+      if (fn.name !== 'LiveStatus') continue;
       for (const inst of rec.instances) if (inst.slots.length) inst.slots[0] = true;
     }
   }
@@ -230,6 +243,15 @@ async function renderStable(comp, props, { expanded, tab }) {
   await tick();
   resetHooks();
   effects.length = 0;
+  // showRecent 必须在数据到位之后再置：LiveStatus 的槽位会被 fetch 回来的
+  // setState 整体替换，首帧就设会被覆盖掉，等于没展开。
+  // 槽位顺序：0 = state（{loading,data,error}），1 = showRecent，2 = copiedId。
+  if (showRecent) {
+    for (const [fn, rec] of instState) {
+      if (fn.name !== 'LiveStatus') continue;
+      for (const inst of rec.instances) if (inst.slots.length > 1) inst.slots[1] = true;
+    }
+  }
   const html2 = serialize(comp(props));
   return html2.length >= html.length ? html2 : html;
 }
@@ -302,6 +324,8 @@ await mkdir(OUT, { recursive: true });
 
 const panelCollapsed = await renderStable(panelComp, {}, { expanded: false });
 const panelExpanded = await renderStable(panelComp, {}, { expanded: true });
+// 最近讨论展开态：面板里唯一展示真实历史数据的地方，必须单独出图验收
+const panelRecent = await renderStable(panelComp, {}, { expanded: false, showRecent: true });
 const panelPreset = await renderStable(panelComp, {}, { expanded: false, tab: 'preset' });
 const panelSettings = await renderStable(panelComp, {}, { expanded: false, tab: 'settings' });
 // settings.section 入口：flat 模式，没有 Tab，概览/预设/设置一路平铺在一个面板里。
@@ -325,6 +349,7 @@ const variants = [
   ['panel-dark-expanded', true, panelExpanded, null],
   ['panel-preset', false, panelPreset, null],
   ['panel-settings', false, panelSettings, null],
+  ['panel-recent', false, panelRecent, null],
   ['panel-flat', false, flatLight, null],
   ['panel-flat-dark', true, flatDark, null],
 ];
@@ -337,4 +362,4 @@ for (const [name, dark, panelHtml, _] of variants) {
   const narrow = `<div class="frame narrow"><div class="bar">侧边栏 340px</div><div class="scroll">${panelHtml}</div></div>`;
   await writeFile(path.join(OUT, `${name}.html`), page({ dark, expanded: name.includes('expanded'), body: main + narrow + side }), 'utf8');
 }
-console.log('wrote out/panel.html, panel-expanded.html, panel-dark.html, panel-dark-expanded.html, panel-preset.html, panel-settings.html, panel-flat.html, panel-flat-dark.html');
+console.log('wrote out/panel.html, panel-expanded.html, panel-dark.html, panel-dark-expanded.html, panel-preset.html, panel-settings.html, panel-flat.html, panel-flat-dark.html, panel-recent.html');

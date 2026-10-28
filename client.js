@@ -110,6 +110,11 @@ window.__ModuleLoader__.load({
         liveNever: '尚无记录',
         liveRecent: '最近讨论',
         liveRecentShow: '展开',
+        liveCopyId: '复制 id（可传给 followUp）',
+        timeJustNow: '刚刚',
+        timeMin: ' 分钟前',
+        timeHour: ' 小时前',
+        timeDay: ' 天前',
         tabOverview: '概览',
         tabPreset: '预设',
         tabSettings: '设置',
@@ -196,6 +201,11 @@ window.__ModuleLoader__.load({
         liveNever: 'none yet',
         liveRecent: 'Recent discussions',
         liveRecentShow: 'Show',
+        liveCopyId: 'Copy id (pass it to followUp)',
+        timeJustNow: 'just now',
+        timeMin: 'm ago',
+        timeHour: 'h ago',
+        timeDay: 'd ago',
         tabOverview: 'Overview',
         tabPreset: 'Presets',
         tabSettings: 'Settings',
@@ -633,17 +643,44 @@ window.__ModuleLoader__.load({
 .wai-live-list { margin: 8px 0 0; padding: 0; list-style: none; }
 .wai-live-recent { margin-top: 8px; }
 .wai-live-recent-toggle { margin-left: -9px; min-height: 24px; padding: 2px 8px; font-size: 11.5px; }
+/* 每条记录两行：标题（主）+ id/时间/字数（次）。
+   原来把等宽 id 放在最左边当主信息，标题反被挤成一行省略号。 */
 .wai-live-list li {
   display: flex;
-  gap: 10px;
-  align-items: baseline;
-  padding: 4px 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
   font-size: 12.5px;
+  border-top: .5px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.06));
+}
+.wai-live-list li:first-child { border-top: 0; }
+.wai-live-meta-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
 }
 .wai-live-id {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 11px;
   color: var(--dsw-alias-label-secondary, #61666b);
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+.wai-live-id:hover { color: var(--dsw-alias-label-primary, #1a1a1a); text-decoration: underline; text-underline-offset: 2px; }
+.wai-live-id:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6);
+  outline-offset: 1px;
+  border-radius: var(--dsw-radius-xs, 4px);
+}
+.wai-live-when {
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, #61666b);
+  font-variant-numeric: tabular-nums;
   flex: none;
 }
 .wai-live-title-txt {
@@ -651,7 +688,7 @@ window.__ModuleLoader__.load({
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--dsw-alias-label-secondary, #61666b);
+  color: var(--dsw-alias-label-primary, #1a1a1a);
 }
 
 /* ── 预设提示词 ── */
@@ -1566,10 +1603,32 @@ window.__ModuleLoader__.load({
         h('div', { className: 'wai-card-body' }, String(answer)));
     });
 
+    /** 相对时间：3 天内说「几分钟/小时/天前」，更早给日期。null 表示时间不可用。 */
+    function relTime(iso) {
+      try {
+        const t = new Date(iso).getTime();
+        if (!Number.isFinite(t)) return null;
+        const diff = Date.now() - t;
+        if (diff < 0) return null;
+        const min = Math.floor(diff / 60000);
+        if (min < 1) return T.timeJustNow;
+        if (min < 60) return min + T.timeMin;
+        const hr = Math.floor(min / 60);
+        if (hr < 24) return hr + T.timeHour;
+        const day = Math.floor(hr / 24);
+        if (day < 7) return day + T.timeDay;
+        const d = new Date(t);
+        return (d.getMonth() + 1) + '/' + d.getDate();
+      } catch (e) {
+        return null;
+      }
+    }
+
     /** 运行状态块：现读宿主 /web-ai-discuss/api/status（护栏与空间锁是运行时状态）。 */
     function LiveStatus() {
       const [state, setState] = React.useState({ loading: true, data: null, error: null });
       const [showRecent, setShowRecent] = React.useState(false);
+      const [copiedId, setCopiedId] = React.useState(null);
       const load = React.useCallback(() => {
         setState((s) => ({ ...s, loading: true }));
         fetch('/web-ai-discuss/api/status', { headers: { accept: 'application/json' } })
@@ -1660,9 +1719,28 @@ window.__ModuleLoader__.load({
             }, T.liveRecent + ' (' + recent.length + ') ' + (showRecent ? '−' : '+')),
             showRecent
               ? h('ul', { className: 'wai-live-list' },
-                recent.map((r) => h('li', { key: r.id },
-                  h('span', { className: 'wai-live-id' }, String(r.id || '')),
-                  h('span', { className: 'wai-live-title-txt', title: String(r.title || '') }, String(r.title || '')))))
+                recent.map((r) => {
+                  // 标题是主信息；id 与时间收成一行次要信息，点一下复制 id（它是 followUp 的入参）。
+                  const when = relTime(r.createdAt);
+                  const chars = typeof r.answerChars === 'number' ? r.answerChars + ' 字' : '';
+                  return h('li', { key: r.id },
+                    h('span', { className: 'wai-live-title-txt', title: String(r.title || '') },
+                      String(r.title || r.id || '')),
+                    h('span', { className: 'wai-live-meta-line' },
+                      h('button', {
+                        className: 'wai-live-id',
+                        title: T.liveCopyId,
+                        onClick: () => {
+                          try {
+                            Promise.resolve(navigator.clipboard.writeText(String(r.id || '')))
+                              .then(() => { setCopiedId(r.id); setTimeout(() => setCopiedId((c) => (c === r.id ? null : c)), 1400); })
+                              .catch(() => {});
+                          } catch (e) { /* ignore */ }
+                        },
+                      }, copiedId === r.id ? T.copied : String(r.id || '')),
+                      when ? h('span', { className: 'wai-live-when' }, when) : null,
+                      chars ? h('span', { className: 'wai-live-when' }, chars) : null));
+                }))
               : null)
           : h('div', { className: 'wai-muted', style: { marginTop: 8 } }, T.liveNever));
     }
