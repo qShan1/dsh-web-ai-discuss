@@ -859,8 +859,8 @@ window.__ModuleLoader__.load({
   .wai-tabs { display: inline-flex; }
   .wai-tab { flex: 0 1 auto; padding-left: 18px; padding-right: 18px; }
 
-  /* 说明块按舒适阅读宽度收口，不横贯整屏拉成一条长句 */
-  .wai-note { max-width: 78ch; }
+  /* 说明块按舒适阅读宽度收口：铺满整屏会让一句话占掉一条长条空盒 */
+  .wai-note { max-width: 72ch; }
 
   /* 预设行合成单行：id/名称 → 说明 → 操作，说明吃掉中间空档 */
   .wai-preset {
