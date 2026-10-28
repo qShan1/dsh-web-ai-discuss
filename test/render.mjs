@@ -104,9 +104,9 @@ const STATUS_BODY = {
       hint: '找出会让它失败的问题', hintEn: 'Find what would break it',
       defaultLevel: 'normal',
       levels: [
-        { id: 'light', title: '轻', titleEn: 'Light', hint: '只说最致命的一个问题', template: '严格评审下面这份内容，只指出最致命的问题，不要鼓励。\n\n{prompt}' },
-        { id: 'normal', title: '标准', titleEn: 'Normal', hint: '按三段结构回答', template: '严格评审下面这份内容，指出会致命的问题，不要鼓励、不要复述。\n按「致命问题 / 重要问题 / 只改一处改哪里」回答。\n\n{prompt}' },
-        { id: 'strict', title: '严', titleEn: 'Strict', hint: '专找会推翻它的问题', template: '以最挑剔的评审者审阅下面内容，专找会把它推翻的问题；不确定就标为存疑。\n按「致命问题 / 重要问题 / 可商榷但可接受 / 只改一处改哪里」回答。\n\n{prompt}' },
+        { id: 'light', title: '轻', titleEn: 'Light', hint: '只说最致命的一个问题', template: '严审此策，惟指其最致命者。\n\n{prompt}' },
+        { id: 'normal', title: '标准', titleEn: 'Normal', hint: '按三段结构回答', template: '严审此策，勿褒勿述。\n列「致命 / 要紧 / 改一处足矣」。\n\n{prompt}' },
+        { id: 'strict', title: '严', titleEn: 'Strict', hint: '专找会推翻它的问题', template: '以最苛者观之，专索可覆其议者；存疑则标。\n列「致命 / 要紧 / 可议而可受 / 改一处足矣」。\n\n{prompt}' },
       ],
     },
     {
@@ -114,9 +114,9 @@ const STATUS_BODY = {
       hint: '按维度对比多个方案', hintEn: 'Compare options by dimension',
       defaultLevel: 'normal',
       levels: [
-        { id: 'light', title: '轻', titleEn: 'Light', hint: '只说最大差异', template: '对比下面几项，只说最大差异。\n\n{prompt}' },
-        { id: 'normal', title: '标准', titleEn: 'Normal', hint: '按维度给取舍建议', template: '按维度对比下面几项，给出取舍建议。\n\n{prompt}' },
-        { id: 'strict', title: '严', titleEn: 'Strict', hint: '找出被忽略的权衡', template: '严格对比下面几项，找出被忽略的权衡与失败条件。\n\n{prompt}' },
+        { id: 'light', title: '轻', titleEn: 'Light', hint: '只说最大差异', template: '以一端衡诸案，明指所取。\n\n{prompt}' },
+        { id: 'normal', title: '标准', titleEn: 'Normal', hint: '按维度给取舍建议', template: '以一端衡诸案，勿逐述。\n先列所衡之端，次以表较之，终指所取及所恃。\n\n{prompt}' },
+        { id: 'strict', title: '严', titleEn: 'Strict', hint: '找出被忽略的权衡', template: '以一端衡诸案，较毕必有所取，且言其何时不可行。\n端按轻重为序（三至六），以表陈之。\n\n{prompt}' },
       ],
     },
   ],

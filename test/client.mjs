@@ -212,9 +212,9 @@ const STATUS_BODY = {
       hint: '挑出致命问题',
       defaultLevel: 'normal',
       levels: [
-        { id: 'light', title: '轻', hint: '只说最致命的问题', template: '严格评审下面这份内容，只指出最致命的问题。\n\n{prompt}' },
-        { id: 'normal', title: '标准', hint: '默认强度', template: '严格评审下面这份内容，指出会致命的问题。\n\n{prompt}' },
-        { id: 'strict', title: '严', hint: '专找推翻它的问题', template: '以最挑剔的评审者审阅下面内容，专找会把它推翻的问题。\n\n{prompt}' },
+        { id: 'light', title: '轻', hint: '只说最致命的问题', template: '严审此策，惟指其最致命者。\n\n{prompt}' },
+        { id: 'normal', title: '标准', hint: '默认强度', template: '严审此策，勿褒勿述。\n列「致命 / 要紧 / 改一处足矣」。\n\n{prompt}' },
+        { id: 'strict', title: '严', hint: '专找推翻它的问题', template: '以最苛者观之，专索可覆其议者。\n\n{prompt}' },
       ],
     },
     {
@@ -378,7 +378,7 @@ check('预设区：当前档位标在条目上（:normal）', presetText.include
   if (btn) btn.props.onClick();
   resetHooks();
   const tmplText = textOf(mainSlot.component({}));
-  check('预设区：看模板后渲染模板预览', tmplText.includes('严格评审下面这份内容'), tmplText.slice(-400));
+  check('预设区：看模板后渲染模板预览', tmplText.includes('严审此策'), tmplText.slice(-400));
 }
 
 // 侧边栏图标

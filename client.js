@@ -1226,6 +1226,16 @@ window.__ModuleLoader__.load({
 
     // 模块级缓存：折叠再展开不重新 fetch；保存/重置后失效。
     let formCache = null;
+    // 预设档位：切 Tab 会卸载 PresetBlock、刷新会重建模块，两个都会把档位打回 normal。
+    // 存进 localStorage（同 LS_KEY 的思路），让选择跨越 Tab 切换与页面刷新。
+    const LEVEL_KEY = 'dsh-web-ai-discuss:preset-level';
+    let presetLevelCache = (() => {
+      try {
+        const v = globalThis.localStorage && globalThis.localStorage.getItem(LEVEL_KEY);
+        if (v === 'light' || v === 'normal' || v === 'strict') return v;
+      } catch (e) { /* 回落 normal */ }
+      return 'normal';
+    })();
 
     function SettingsForm() {
       const [phase, setPhase] = React.useState(formCache ? 'ready' : 'loading');
@@ -1753,7 +1763,17 @@ window.__ModuleLoader__.load({
      */
     function PresetBlock() {
       const [state, setState] = React.useState({ loading: true, items: [], error: null });
-      const [level, setLevel] = React.useState('normal');
+      // 档位是全局选择，但 PresetBlock 会随 Tab 切换被卸载重挂（Tabs 只渲染当前 pane）。
+      // 存进组件 state 会每次回到 normal —— 用户「调了档位又跳回去」就是这个原因。
+      // 用模块级变量保活，语义与 formCache 一致。
+      const [level, setLevelState] = React.useState(presetLevelCache);
+      const setLevel = (next) => {
+        presetLevelCache = next;
+        try {
+          if (globalThis.localStorage) globalThis.localStorage.setItem(LEVEL_KEY, next);
+        } catch (e) { /* 存不了也照常切 */ }
+        setLevelState(next);
+      };
       const [copiedId, setCopiedId] = React.useState(null);
       const [openId, setOpenId] = React.useState(null);
       React.useEffect(() => {
@@ -1964,14 +1984,25 @@ window.__ModuleLoader__.load({
       } catch (e) { /* ignore */ }
     }
 
-    /** 输入框下方的小快捷入口（composerDock=true 且侧边栏存在时）。 */
+    /**
+     * 输入框下方的小快捷入口（composerDock=true 且侧边栏存在时）。
+     *
+     * DSH 的模型是「左侧图标导航 → 中央面板显示内容」，所以核心动作是 selectPanel。
+     * 但侧边栏在窄屏会自动折叠，此时选中了也看不见 —— 用户会觉得「按钮没反应」。
+     * 宿主判定窄屏的门槛是 viewport < 1024（SIDEBAR_AUTO_COLLAPSE），这里复刻同一个，
+     * 只在窄屏补一次 toggleSidebar 把侧边栏展开；宽屏下侧边栏默认就展开，不碰开合。
+     */
     function ComposerChip() {
       return h('button', {
         className: 'wai-btn',
         style: { minHeight: 26, padding: '3px 10px', fontSize: 12 },
         title: T.panel,
         onClick: () => {
-          try { ctx.layout.selectPanel(PANEL_ID); } catch (e) { /* ignore */ }
+          try { ctx.layout.selectPanel(PANEL_ID); } catch (e) { /* 面板未注册时静默 */ }
+          try {
+            // 窄屏：侧边栏默认折叠（narrowExpanded=false），展开它才能看到刚选中的面板
+            if (globalThis.innerWidth > 0 && globalThis.innerWidth < 1024) ctx.layout.toggleSidebar();
+          } catch (e) { /* 宿主版本无 toggleSidebar 时忽略 */ }
         },
       }, T.panel);
     }
