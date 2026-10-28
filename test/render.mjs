@@ -87,6 +87,9 @@ const STATUS_BODY = {
     serial: true, busy: false, minGapMs: 7000, jitterMs: 3000,
     windowMs: 3600000, windowLimit: 6, windowUsed: 2,
     totalCalls: 11, rejectedBusy: 1, rejectedRate: 0, lastFinishedAt: '2026-10-27T05:19:00.000Z',
+    // 概览状态标签后面的倒计时：夹具给一个确定的 11 分钟
+    nextAvailableAt: '2026-10-27T05:31:00.000Z', nextAvailableInMs: 660000,
+    nextAvailableIsLowerBound: true, blockedBy: 'min_gap',
   },
   space: { locked: false, holder: null },
   storeStats: { discussions: 12, oldestAt: '2026-10-25T02:00:00.000Z', newestAt: '2026-10-27T05:19:00.000Z' },

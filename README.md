@@ -82,38 +82,77 @@ plugin_manager({ action: 'install_bundle', target: '<绝对路径>/dsh-web-ai-di
 
 每条预设都有**三档强度**，同一套框架、不同狠度：
 
-| 档位 | 强度 | 模板长度 | 用途 |
+| 档位 | 强度 | 框架长度（8 条预设实测） | 用途 |
 |---|---|---|---|
-| `light` | 轻 | 1–2 句（≤200 字符） | 只想要一个结论，别长篇大论 |
-| `normal` | 标准（默认） | 3–4 行 | 常规的评审 / 对比 / 拆解 |
-| `strict` | 严 | 4–5 行 | 要它专找会推翻结论的问题 |
+| `light` | 轻 | 一句，9–23 字（均 14） | 只想要一个结论，别长篇大论 |
+| `normal` | 标准（默认） | 两行，30–62 字（均 45） | 常规的评审 / 对比 / 拆解 |
+| `strict` | 严 | 一至两行，39–64 字（均 52） | 要它专找会推翻结论的问题 |
+
+模板正文一律用**极简文言**（全文 24 条平均 37 字，最长 `oppose:strict` 64 字），
+再长的话术靠 `{prompt}` 带入你的原始提问——框架只占几十字，token 成本可忽略。
 
 - 两种写法：`preset="review:strict"`（id 与档位写一起）或 `preset="review"` + `presetLevel="strict"`；
   两者同时给且档位不一致 → `code=invalid`，`reason=preset_level_conflict`
 - 档位不认识 → `code=invalid`，`reason=unknown_preset_level`，返回 `available`
 - 预设 id 不认识 → `code=invalid`，`reason=unknown_preset`，返回 `available`；**两种校验都在护栏取票之前，不消耗讨论配额**
-- 模板长度是**硬约束**：轻档模板必须 ≤200 字符（`test/cases.mjs` 断言），避免把长指令塞进 token
+- 模板长度有**上限断言**：轻档模板必须 ≤220 字符（`test/cases.mjs:432`），这是一道宽松的防膨胀闸门；
+  实测轻档最长 23 字（`oppose`），离上限很远，改文言时不必刻意贴近阈值
 - 落盘记录里 `prompt` 存的是**原始提问**、`preset` 存预设 id、`presetLevel` 存档位——检索与复盘看到的是你真正问的东西
 - 预设集是插件常量（`lib/presets.js`），不落盘、不进设置项；面板「预设」分区可切换档位、一键复制模板或复制调用语句
 
 ### 附件上传
 
 `attachments` 里的文件会通过网页端的上传控件交给 DeepSeek 自己读——插件不读文件内容，
-只是把它塞进网页的 `input[type=file]`，等附件 chip 出现（文件名出现在输入框上方）才算上传完成。
+只是把它塞进网页的 `input[type=file]`，等上传**到位证据**出现才算完成。
+
+「到位证据」分两类，因为网页端对两类文件的渲染方式根本不同（2026-10-28 探针实证）：
+
+| 附件类型 | 网页端表现 | 判定依据 |
+|---|---|---|
+| 文本 / 文档（md、pdf、docx、csv…） | 附件 chip，显示「文件名 + 大小」 | 正文里出现文件名文本 |
+| **图片**（png、jpg、webp、gif、bmp、avif、svg） | **纯缩略图，正文不含文件名** | 新增 `img[src^="blob:"]` 数量 ≥ 图片数，或 `img` 的 `alt`/`title`/`aria-label` 命中文件名 |
+
+图片走缩略图判定，是因为整页 `innerText` 里**根本不会出现** `foo.png` 这个字符串——
+早先只查文本的实现会把一次成功的图片上传误判成 `attachment_not_ready`，
+现在按扩展名分流取证，图片与文档混传时两类证据都要满足。
 
 - 必须是**绝对路径**的普通文件；相对路径、文件不存在、目录、超过 20MB 一律 `code=invalid`
+- 单个调用最多 5 个附件
 - 路径校验发生在**护栏取票之前**——写错路径不会白白消耗一次讨论配额
-- 上传没成功（网页端没有文件控件、chip 没出现）→ `code=failed`，`reason` 为
+- 上传没成功（网页端没有文件控件、预览没出现）→ `code=failed`，`reason` 为
   `attachment_upload_failed` / `attachment_not_ready`
-- 成功时返回 `attachments`（路径数组）与 `attachmentInfo`（`uploaded` / `chipsVisible` / `hasFileInput`）
+- 成功时返回 `attachments`（路径数组）与 `attachmentInfo`（`uploaded` / `chipsVisible` /
+  `hasFileInput` / `imageCount` / `textCount` / `evidence`；`evidence` 是最后一轮的取证快照，
+  上传失败时可据此判断是哪一类附件没到位）
 
 ### `web_ai_read_discussion`
 
-`id`（读指定讨论）、`limit`（1–20，默认 3）、`live`（`true` 时现读 ego 空间当前页面的回答气泡）。**纯读，不产生任何网页写操作。**
+`id`（读指定讨论）、`limit`（1–20，默认 3）、`live`（`true` 时现读 ego 空间当前页面的回答气泡）。
+**纯读，不产生任何网页写操作。**
+
+`search` 是**本地检索**（不区分大小写，匹配标题与答案正文）：
+
+- 带 `search` 时每条只回**命中位置的上下文片段**（`snippet`，约 ±60 字）与 `matchedIn`（`title` / `answer`），
+  **不回全文**，`latest` 为 `null`，并给 `fullTextHint`。
+  原因很实在：命中 20 条 × 每条上限 12000 字 = 24 万字符，整包塞进模型上下文会把一轮对话撑爆，
+  而检索的目的是**定位**——拿到 id 再精确读一次才是拿全文的正路。
+- 不带 `search` 时行为不变：按最新优先返回，`items[].text` 与 `latest` 是清洗后的全文。
+- 没命中 → `code=ok` + `reason=no_match`（不是错误，是正常结果）。
 
 ### `web_ai_status`
 
 `probe`（`true` 时执行只读页面探针，耗时数秒）。返回 ego 定位结果、空间名、存储目录、护栏参数与用量、最近讨论索引，以及 `presets`（可用预设清单）。
+
+护栏快照里有三个「还能不能发」的字段，比单看用量有用：
+
+| 字段 | 含义 |
+|---|---|
+| `nextAvailableAt` | 下一次允许写操作的最早时刻（ISO）；`busy` 时为 `null`（要等这轮结束才能算间隔） |
+| `nextAvailableInMs` | 距该时刻还有多久；`busy` 时同上 |
+| `blockedBy` | `null` / `busy` / `min_gap`（被最小间隔挡住）/ `rate_window`（窗口配额用尽） |
+
+`nextAvailableInMs` 是**下限**：抖动（0–`jitterMs`）是每次取票现摇的，实际可能再多等一点，
+所以快照里带 `nextAvailableIsLowerBound: true`。面板概览会把这句话直接显示在状态标签后面。
 
 ### 返回码
 
@@ -184,7 +223,7 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
 | 位置 | 内容 |
 |---|---|
 | 侧边栏格子 | 图标入口（气泡几何图形，选中态不降透明度），点了切到中央面板 |
-| 中央面板 `main` | 标题 + 构建戳 `build x.y.z`、定位说明、**三个分区 Tab**：<br>· **概览**：运行状态块（窗口用量 / ego 空间 / 记录数 / 总调用）、调用模板（一键复制）、`用法与说明`（三重护栏 / 返回码 / 已知限制）<br>· **预设**：档位分段控件（轻 / 标准 / 严）+ 8 条预设（可「看模板」「复制调用」）<br>· **设置**：自定义设置表单 |
+| 中央面板 `main` | 标题 + 构建戳 `build x.y.z`、定位说明、**三个分区 Tab**：<br>· **概览**：运行状态块（窗口用量 / ego 空间 / 记录数 / 总调用，状态标签后接「N 分钟后可发」的倒计时）、调用模板（一键复制）、`用法与说明`（三重护栏 / 返回码 / 已知限制）<br>· **预设**：档位分段控件（轻 / 标准 / 严）+ 8 条预设（可「看模板」「复制调用」）<br>· **设置**：自定义设置表单 |
 | 会话工具卡片 | 每次 `web_ai_discuss` 的结果卡片：返回码徽章、耗时、`discussionId`（可直接传给 `followUp`）、附件文件名、回答原文、一键复制回答；失败态显示 `reason` / `message` / 半成品 `partial` |
 | 设置页分区 | `placement` 含 `settings` 时，在设置里占一页；此处**不分区**（表单铺开，设置项必须一眼可见） |
 | better-sidebar 页 | 装了 `dsh-better-sidebar` 时额外注册一页（见下节），与上述入口并存 |
@@ -415,6 +454,13 @@ node test/smoke.mjs preset review:strict "问题"        # 预设 + 档位的真
 - **没有 ego MCP 工具可依赖**：本环境 ego 只有 CLI，插件以子进程方式调用它（脚本走 stdin，结果走文件 + stderr 哨兵行）
 - 讨论空间常驻 ego，插件不调用 `finish`；需要清理时在 ego 侧手动处理
 - 护栏作用域是**插件进程**，跨进程并发不在保护范围内
+- **生成态不可探**：网页端没有可靠的「仍在生成」信号可读（110 次采样探针实证：可见按钮的
+  `aria-label`/`className` 里没有 send/stop/generating 语义，筛不出来）。完成判定只能靠
+  「用户消息数上涨 + 最后一条回答文本连续 `stableSamples` 次不变」。
+  这意味着理论上**生成中停顿 ≥ `stableSamples × pollMs`（默认 2.7 秒）会被当成完成**，
+  返回一个中间态答案且 `code=ok`。同一次探针里未复现该情况——回答文本在生成中是**非单调**的
+  （实测 431→35→61→83→316，网页反复重排替换），任何长度跳变都会重置稳定计数。
+  若将来真出现截断，先把 `stableSamples` 调高（设置项「稳定采样」，地板 2）比改判据更稳。
 - 网页 DOM 改版会导致选择器失效，届时更新 `lib/script.js`（输入框 / 新对话按钮 / 滚动容器 / 回答气泡 / 文件控件等处）
 - 附件走的是网页自己的上传控件，**文件先被传到 DeepSeek 服务器**再被模型读取——插件只负责把路径塞进控件并等 chip 出现，不解析内容；大文件的上传耗时取决于网页端与网络
 - 附件上限是插件自己的约束（5 个 / 单个 20MB / 必须绝对路径），不是网页端的限制
@@ -423,7 +469,7 @@ node test/smoke.mjs preset review:strict "问题"        # 预设 + 档位的真
 - **长会话连发同一问题的可靠性依赖 `newChat=true` 默认值**：`newChat=false` 沿用旧会话时，虚拟列表 + 重渲染抖动可能导致完成判定超时（发送本身已有多重确认兜底）；确需追问请配 `followUp`
 - `lib/hooks.js` 双出口（`webhookUrl` / `hooksFile`）是自定义扩展点：`discuss.ok` 事件推送 `{id,title,prompt,answer,elapsedMs,discussionId}`，钩子异常只进 `notify` 不影响返回码
 - 预设提示词是**提问框架**，不是答案模板：框架给的是回答结构，结论仍由网页版模型给；预设集不可在设置页增删（避免配置面膨胀）
-- 预设档位只改**框架的严格程度与模板长度**，不改变回答结构的语义；轻档模板刻意压到 ≤200 字符，长问题本身另算 token
+- 预设档位只改**框架的严格程度与模板长度**，不改变回答结构的语义；文言化后轻档 9–23 字、严档 39–64 字，长问题本身另算 token
 - 侧边栏面板按**三个 Tab 分区**呈现；设置页分区不分区（铺开）。Tab 状态不落盘，刷新后回到「概览」
 - 面板配色依赖宿主 `dsh-client-ui-theme` 提供的 `--dsw-alias-*` 令牌；宿主换主题体系时需要同步改 `client.js` 里的 CSS 变量名（CSS 里都写了 fallback 值，不会白屏，但会失去主题跟随）
 - 宿主里的 `<style>` 常驻 DOM，样式必须**按内容比对后替换**而不是「存在就跳过」；否则插件升级后界面会停在旧版样式（已修 + `test/styles.mjs` 回归）

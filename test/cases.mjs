@@ -21,6 +21,7 @@ import { Guard } from '../lib/guard.js';
 import { Mutex } from '../lib/mutex.js';
 import { resolveConfig } from '../lib/config.js';
 import { registerTools } from '../lib/tools.js';
+import { buildDiscussScript } from '../lib/script.js';
 
 const FAKE_EGO = `const fs = require('node:fs');
 
@@ -427,7 +428,7 @@ const cases = [
         for (const l of p.levels) {
           assert.ok(l.template.includes('{prompt}'), `${p.id}/${l.id} 模板应含 {prompt} 占位`);
           assert.equal((l.template.match(/\{prompt\}/g) || []).length, 1);
-          // 档位模板要短：轻档 ≤ 200 字符，避免把整段长指令塞进 token
+          // 档位模板要短：轻档 ≤ 220 字符是一道防膨胀闸门（文言化后实测最长 23 字）
           if (l.id === 'light') {
             assert.ok(l.template.length <= 220, `${p.id}/light 模板过长：${l.template.length}`);
           }
@@ -523,6 +524,121 @@ const cases = [
     } finally {
       h.restore();
     }
+  }),
+
+  record('检索：命中只回片段，不回全文（否则 20 条 = 几十万字符）', async () => {
+    const h = await makeHarness({ mode: 'ok' });
+    try {
+      // 直接落两条记录，绕开护栏与 ego：本用例只验检索分支的返回形态。
+      const { saveDiscussion } = await import('../lib/store.js');
+      await saveDiscussion(h.cfg, {
+        id: 'd-20260101-000000-aaaa',
+        title: '甲乙丙：标题里有的词',
+        prompt: '问一',
+        answer: '这是一段答案，里面没有关键词。'.repeat(50),
+        createdAt: new Date().toISOString(),
+      });
+      await saveDiscussion(h.cfg, {
+        id: 'd-20260102-000000-bbbb',
+        title: '无关标题',
+        prompt: '问二',
+        answer: '答案里出现甲乙丙这个词' + '尾巴'.repeat(200),
+        createdAt: new Date().toISOString(),
+      });
+      const read = h.tools.get('web_ai_read_discussion');
+
+      // 标题命中
+      const byTitle = await read.execute({ search: '甲乙丙' }, h.exec);
+      assert.equal(byTitle.code, 'ok');
+      assert.equal(byTitle.items.length, 2, '两条都应命中甲乙丙');
+      assert.equal(byTitle.search, '甲乙丙');
+      const titleHit = byTitle.items.find((i) => i.id === 'd-20260101-000000-aaaa');
+      assert.equal(titleHit.matchedIn, 'title');
+      assert.ok(typeof titleHit.snippet === 'string' && titleHit.snippet.length > 0);
+      assert.equal(titleHit.text, undefined, '检索分支不该回全文');
+
+      // 答案命中：片段要带上下文且远短于全文
+      const answerHit = byTitle.items.find((i) => i.id === 'd-20260102-000000-bbbb');
+      assert.equal(answerHit.matchedIn, 'answer');
+      assert.ok(answerHit.snippet.includes('甲乙丙'));
+      assert.ok(answerHit.snippet.length < 200, '片段必须短：' + answerHit.snippet.length);
+      assert.equal(byTitle.latest, null, '检索分支不给 latest 全文');
+      assert.ok(byTitle.fullTextHint);
+
+      // 未命中
+      const miss = await read.execute({ search: '不存在的词' }, h.exec);
+      assert.equal(miss.code, 'ok');
+      assert.equal(miss.reason, 'no_match');
+      assert.equal(miss.items.length, 0);
+
+      // 不带 search 仍回全文（向后兼容）
+      const recent = await read.execute({ limit: 1 }, h.exec);
+      assert.equal(recent.code, 'ok');
+      assert.ok(typeof recent.items[0].text === 'string' && recent.items[0].text.length > 0);
+      assert.equal(recent.latest, recent.items[0].text);
+      return 'title+answer snippet ok';
+    } finally {
+      h.restore();
+    }
+  }),
+
+  record('护栏快照：给出下一次可发时间与阻塞原因', async () => {
+    const cfgA = resolveConfig({ minGapMs: 5000, jitterMs: 0, windowMs: 60000, windowLimit: 2 });
+    const gA = new Guard(cfgA);
+    const fresh = gA.snapshot();
+    assert.equal(fresh.blockedBy, null, '空护栏不该报阻塞');
+    assert.equal(fresh.nextAvailableInMs, 0);
+
+    await gA.acquire();
+    gA.release();
+    const after = gA.snapshot();
+    assert.equal(after.blockedBy, 'min_gap');
+    assert.ok(after.nextAvailableInMs > 4000 && after.nextAvailableInMs <= 5000, `间隔门：${after.nextAvailableInMs}`);
+    assert.ok(typeof after.nextAvailableAt === 'string' && after.nextAvailableAt.endsWith('Z'));
+
+    // 窗口用尽 → 阻塞原因切成 rate_window，等待时间跳到窗口剩余
+    const cfgB = resolveConfig({ windowMs: 60000, windowLimit: 1 });
+    const gB = new Guard(cfgB);
+    await gB.acquire();
+    gB.release();
+    const full = gB.snapshot();
+    assert.equal(full.blockedBy, 'rate_window');
+    assert.ok(full.nextAvailableInMs > 55000, `窗口门：${full.nextAvailableInMs}`);
+    assert.equal(full.nextAvailableIsLowerBound, true);
+    return 'min_gap → rate_window';
+  }),
+
+  record('附件脚本：图片走缩略图取证，文本走文件名取证', () => {
+    const common = {
+      resultFile: 'C:/tmp/r.json',
+      spaceName: 'dsh-web-ai-discuss',
+      url: 'https://chat.deepseek.com/',
+      prompt: 'hi',
+      newChat: true,
+      pollMs: 900,
+      stableSamples: 3,
+      sendTimeoutMs: 180000,
+    };
+    const mixed = buildDiscussScript({ ...common, attachments: ['E:/a/shot.png', 'E:/a/doc.md'] });
+    // 回归防线：网页端对图片只渲染缩略图，body.innerText 里永远没有 "shot.png"。
+    // 旧实现只查正文文本 → 一次成功的图片上传被判成 attachment_not_ready。
+    assert.ok(
+      mixed.includes('img[src^="blob:"]'),
+      '生成脚本应带 blob 缩略图基线统计（图片不用文件名取证）',
+    );
+    assert.ok(mixed.includes('isImage'), '生成脚本应按扩展名分流取证');
+    assert.ok(
+      mixed.includes('/\\.(png|jpe?g|webp|gif|bmp|avif|svg)$/i'),
+      '图片扩展名白名单应完整生成',
+    );
+    assert.ok(mixed.includes('namedInAttr'), '生成脚本应保留 alt/title/aria 兜底取证');
+    assert.ok(
+      mixed.includes('const attachFiles = ["E:/a/shot.png","E:/a/doc.md"]'),
+      '附件路径应原样注入',
+    );
+    const plain = buildDiscussScript({ ...common, attachments: [] });
+    assert.ok(plain.includes('const attachFiles = [];'), '无附件时应注入空数组');
+    return 'image+text split ok';
   }),
 ];
 

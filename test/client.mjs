@@ -201,7 +201,7 @@ const textOf = (node) => {
 const STATUS_BODY = {
   ok: true,
   at: '2026-10-27T05:20:00.000Z',
-  guardrails: { serial: true, busy: false, windowLimit: 6, windowUsed: 2, totalCalls: 11 },
+  guardrails: { serial: true, busy: false, windowLimit: 6, windowUsed: 2, totalCalls: 11, nextAvailableInMs: 720000 },
   space: { locked: false, holder: null },
   storeStats: { discussions: 12 },
   recent: [{ id: 'd-20261027-131502-9a6b', title: '用一句话回答：8+8等于几？' }],
@@ -294,6 +294,10 @@ const overviewText = textOf(mainSlot.component({}));
 check('运行状态：渲染用量/空间/记录三项',
   overviewText.includes('窗口用量') && overviewText.includes('ego 空间') && overviewText.includes('讨论记录'),
   overviewText.slice(overviewText.indexOf('运行状态'), overviewText.indexOf('运行状态') + 160));
+// 「还能不能发」是结论，不只是数字：护栏快照的 nextAvailableInMs 必须变成一句人话。
+check('运行状态：显示下次可发时间（下限，不含抖动）',
+  overviewText.includes('12 分钟后可发'),
+  overviewText.slice(overviewText.indexOf('运行状态'), overviewText.indexOf('运行状态') + 160));
 
 // 切到「设置」分区
 const clickTab = (label) => {
@@ -315,8 +319,12 @@ const settingsText = textOf(mainSlot.component({}));
 check('设置区：渲染分组标题（发送与判定/输出与扩展）',
   settingsText.includes('发送与判定') && settingsText.includes('输出与扩展'),
   settingsText.slice(settingsText.indexOf('自定义设置'), settingsText.indexOf('自定义设置') + 220));
-check('设置区：渲染字段与下限',
-  settingsText.includes('窗口上限') && settingsText.includes('最小间隔') && settingsText.includes('下限 5000'));
+check('设置区：渲染字段与下限（约束式写法，不与输入值混淆）',
+  settingsText.includes('窗口上限') && settingsText.includes('最小间隔')
+  && settingsText.includes('≥ 5000 ms')
+  // 「下限 5000」并排在输入框右侧会被读成当前值，这条防止改回去
+  && !settingsText.includes('下限 5000'),
+  settingsText.slice(settingsText.indexOf('最小间隔') - 20, settingsText.indexOf('最小间隔') + 60));
 check('设置区：渲染保存/重新读取/恢复默认按钮',
   settingsText.includes('保存修改') && settingsText.includes('重新读取') && settingsText.includes('恢复默认'));
 check('设置区：GET 打到 /settings 路由',
@@ -327,8 +335,25 @@ check('设置区：GET 打到 /settings 路由',
 // 勾选框的组合与枚举一一映射，两个都不勾没有对应值，必须就地挡住。
 resetHooks();
 const settingsTree = mainSlot.component({});
+// 一次遍历同时收 .wai-field 与 .wai-input：collectByClass 会重新渲染函数组件，
+// 同一棵树遍历第二次时桩的 hook 槽位已错位，会退化成 loading 态（拿到空结果）。
+const walkSettings = (node, out = { fields: [], inputs: [] }) => {
+  if (!node || typeof node !== 'object' || node === false) return out;
+  if (Array.isArray(node)) { node.forEach((n) => walkSettings(n, out)); return out; }
+  if (typeof node.type === 'function') { walkSettings(renderComponent(node), out); return out; }
+  const cn = node.props && node.props.className;
+  if (typeof cn === 'string') {
+    const parts = cn.split(/\s+/);
+    if (parts.includes('wai-field')) out.fields.push(node);
+    if (parts.includes('wai-input')) out.inputs.push(node);
+  }
+  if (node.props) walkSettings(node.props.children, out);
+  return out;
+};
+const settingsNodes = walkSettings(settingsTree);
+const allNumInputs = settingsNodes.inputs;
 // 字段标签在 .wai-field 下、勾选框在其中的 .wai-check 里，取整行文本判断。
-const fieldsWithCheck = collectByClass(settingsTree, 'wai-field')
+const fieldsWithCheck = settingsNodes.fields
   .filter((f) => collectByClass(f, 'wai-check').length === 1)
   .map((f) => textOf(f));
 const checkboxLabels = fieldsWithCheck
@@ -338,6 +363,17 @@ check('设置区：入口位置拆成两个勾选框（侧边栏图标 / 设置�
   && checkboxLabels.some((t) => t.includes('侧边栏图标'))
   && checkboxLabels.some((t) => t.includes('设置页分区')),
   checkboxLabels);
+
+// 频率窗口在界面层按分钟：3600000ms → 60，下限 600000ms → 10。
+// 存进去的仍是毫秒（scale 只在渲染与收集时各换算一次）：下限提示走正文文本，
+// 输入框默认值走 input 属性（input 的值不是文本节点）。
+const minuteInputs = allNumInputs.filter((n) => n.props.defaultValue === 60);
+check('设置区：频率窗口按分钟录入（内部仍存毫秒）',
+  minuteInputs.length === 1
+  && minuteInputs[0].props.min === 10
+  && settingsText.includes('≥ 10 分钟')
+  && !allNumInputs.some((n) => n.props.defaultValue === 3600000),
+  allNumInputs.map((n) => ({ defaultValue: n.props.defaultValue, min: n.props.min })));
 const selectCount = (() => {
   let n = 0;
   const walk = (node) => {

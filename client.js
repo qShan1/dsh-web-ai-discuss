@@ -62,6 +62,11 @@ window.__ModuleLoader__.load({
         settingsSaved: '已保存并生效',
         settingsFail: '保存失败',
         settingsFloor: '下限',
+        settingsFloorTip: '低于下限 {n} 会被钳制到 {n}',
+        liveRejTip: '曾有请求被拦',
+        nextSec: ' 秒后可发',
+        nextMin: ' 分钟后可发',
+        nextHour: ' 小时后可发',
         settingsReload: '重新读取',
         settingsRestore: '恢复默认',
         groupUi: '显示位置',
@@ -153,6 +158,11 @@ window.__ModuleLoader__.load({
         settingsSaved: 'Saved and applied',
         settingsFail: 'Save failed',
         settingsFloor: 'min',
+        settingsFloorTip: 'Values below the {n} floor are clamped to {n}',
+        liveRejTip: 'a request was blocked',
+        nextSec: 's until next send',
+        nextMin: 'min until next send',
+        nextHour: 'h until next send',
         settingsReload: 'Reload',
         settingsRestore: 'Restore defaults',
         groupUi: 'Placement',
@@ -639,6 +649,28 @@ window.__ModuleLoader__.load({
   font-size: 11.5px;
   color: var(--dsw-alias-label-secondary, #61666b);
   font-variant-numeric: tabular-nums;
+}
+/* 拒绝数：非零必须跳出来，否则「刚被拦过」这件事在界面上不存在。
+   文字走 label-primary + 600（warn 令牌在浅色主题下只有 2.0:1，不能当文字色），
+   警示感交给前置的圆点：它是装饰图形，不参与文字对比度门槛。 */
+.wai-rej { font-variant-numeric: tabular-nums; }
+.wai-rej-on { color: var(--dsw-alias-label-primary, #1a1a1a); font-weight: 600; }
+.wai-rej-tip { color: var(--dsw-alias-label-primary, #1a1a1a); font-weight: 600; }
+.wai-rej-mark {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-warn-primary, #b26a00);
+  vertical-align: middle;
+}
+/* 「下次可发」跟在状态标签后面：答案型状态（空闲/执行中）之后接一句可执行的时间 */
+.wai-live-next {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary, #61666b);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .wai-live-list { margin: 8px 0 0; padding: 0; list-style: none; }
 .wai-live-recent { margin-top: 8px; }
@@ -1211,7 +1243,9 @@ window.__ModuleLoader__.load({
       { key: 'composerDock', group: 'ui', zh: '输入框下方快捷入口', en: 'Composer chip', kind: 'bool' },
       { key: 'minGapMs', group: 'guard', zh: '最小间隔', en: 'Min gap', unit: 'ms', floorKey: 'minGapMs' },
       { key: 'jitterMs', group: 'guard', zh: '随机抖动', en: 'Jitter', unit: 'ms', floorKey: 'jitterMs' },
-      { key: 'windowMs', group: 'guard', zh: '频率窗口', en: 'Window', unit: 'ms', floorKey: 'windowMs' },
+      // scale：界面显示/录入用 毫秒÷scale，存储与校验仍是毫秒（不做单位语义迁移）。
+      // 3600000 要用户心算 ÷60÷1000 才知道是 1 小时，是设置页里认知负荷最高的一项。
+      { key: 'windowMs', group: 'guard', zh: '频率窗口', en: 'Window', unit: 'ms', floorKey: 'windowMs', scale: 60000, unitZh: '分钟', unitEn: 'min' },
       { key: 'windowLimit', group: 'guard', zh: '窗口上限', en: 'Window limit', unit: '次', floorKey: null },
       { key: 'pollMs', group: 'judge', zh: '轮询间隔', en: 'Poll', unit: 'ms', floorKey: 'pollMs' },
       { key: 'stableSamples', group: 'judge', zh: '稳定采样', en: 'Stable samples', unit: '次', floorKey: 'stableSamples' },
@@ -1297,7 +1331,8 @@ window.__ModuleLoader__.load({
             if (v !== (effective[f.key] ?? '')) out[f.key] = v;
           } else {
             const n = Number(node.value);
-            if (Number.isFinite(n) && Math.trunc(n) !== effective[f.key]) out[f.key] = Math.trunc(n);
+            const scaled = Math.trunc(n * (f.scale || 1));
+            if (Number.isFinite(n) && scaled !== effective[f.key]) out[f.key] = scaled;
           }
         }
         const sideNode = refs.current.placementSidebar;
@@ -1315,7 +1350,9 @@ window.__ModuleLoader__.load({
       const submit = () => {
         const payload = collectChanges();
         if (payload.__placementInvalid) {
-          setSaveState({ phase: 'error', message: T.placementEmpty });
+          // 就地挡住，不发请求。用独立的 invalid 相位：说「保存失败」会让用户以为
+          // 已经提交过、需要重试，其实是输入本身不成立。
+          setSaveState({ phase: 'invalid', message: T.placementEmpty });
           return;
         }
         if (Object.keys(payload).length === 0) return;
@@ -1412,19 +1449,34 @@ window.__ModuleLoader__.load({
                     ref: bindRef(f.key),
                   }));
               }
-              const floorHint = f.floorKey && floor[f.floorKey] !== undefined
-                ? T.settingsFloor + ' ' + floor[f.floorKey] : '';
+              // 「下限 5000」并在输入框右边，快速扫视时会被读成当前值/默认值。
+              // 换成 ≥ 约束式并带上单位（旧实现有下限的字段反而把单位丢了），
+              // 完整说明放 title，悬停才占注意力；同时把 min 交给浏览器做轻校验。
+              const hasFloor = f.floorKey && floor[f.floorKey] !== undefined;
+              // scale 把毫秒换算成人类单位（只有频率窗口用）；写入时再乘回去。
+              const scale = f.scale || 1;
+              const unitLabel = (zh ? f.unitZh : f.unitEn) || f.unit || '';
+              const floorShown = hasFloor ? Math.ceil(floor[f.floorKey] / scale) : null;
+              const valueShown = typeof v === 'number' ? v / scale : '';
+              const floorHint = hasFloor
+                ? '≥ ' + floorShown + (unitLabel ? ' ' + unitLabel : '')
+                : unitLabel;
               return h('div', { className: 'wai-field', key: f.key },
                 h('span', { className: 'wai-field-label' }, zh ? f.zh : f.en),
                 h('input', {
                   className: 'wai-input',
                   type: 'number',
-                  min: 0,
+                  min: hasFloor ? floorShown : 0,
                   step: 1,
-                  defaultValue: v ?? '',
+                  defaultValue: valueShown,
                   ref: bindRef(f.key),
                 }),
-                h('span', { className: 'wai-field-hint' }, floorHint || f.unit || ''));
+                h('span', {
+                  className: 'wai-field-hint',
+                  title: hasFloor
+                    ? T.settingsFloorTip.replace(/\{n\}/g, floorShown + ' ' + unitLabel)
+                    : null,
+                }, floorHint));
             })));
         }),
         h('div', { className: 'wai-actions wai-actions-sticky' },
@@ -1445,6 +1497,9 @@ window.__ModuleLoader__.load({
           }, T.settingsRestore)),
         saveState.phase === 'ok'
           ? h('div', { className: 'wai-status wai-status-ok' }, String(saveState.message))
+          : null,
+        saveState.phase === 'invalid'
+          ? h('div', { className: 'wai-status wai-status-error' }, String(saveState.message))
           : null,
         saveState.phase === 'error'
           ? h('div', { className: 'wai-status wai-status-error' }, T.settingsFail + '：' + String(saveState.message))
@@ -1614,6 +1669,14 @@ window.__ModuleLoader__.load({
     });
 
     /** 相对时间：3 天内说「几分钟/小时/天前」，更早给日期。null 表示时间不可用。 */
+    /** 22 字符的讨论 id 在 340px 窄栏里会把「时间 / 字数」挤出视野，标题反被压缩。
+     *  只留尾 4 位做视觉锚点（前缀日期与右侧相对时间是同一信息，重复）；
+     *  全量进 title，点击复制的仍是完整 id（followUp 要的是完整 id）。 */
+    function shortId(id) {
+      const s = String(id || '');
+      return s.length > 10 ? '…' + s.slice(-4) : s;
+    }
+
     function relTime(iso) {
       try {
         const t = new Date(iso).getTime();
@@ -1632,6 +1695,15 @@ window.__ModuleLoader__.load({
       } catch (e) {
         return null;
       }
+    }
+
+    /** 还要等多久才允许下一次写操作。护栏给的是下限（不含每次现摇的抖动）。 */
+    function untilText(ms) {
+      const s = Math.max(0, Math.round(ms / 1000));
+      if (s < 60) return String(s) + T.nextSec;
+      const m = Math.round(s / 60);
+      if (m < 60) return String(m) + T.nextMin;
+      return String(Math.round((m / 60) * 10) / 10) + T.nextHour;
     }
 
     /** 运行状态块：现读宿主 /web-ai-discuss/api/status（护栏与空间锁是运行时状态）。 */
@@ -1704,6 +1776,12 @@ window.__ModuleLoader__.load({
       const quota = typeof g.windowUsed === 'number' && typeof g.windowLimit === 'number'
         ? g.windowUsed + ' / ' + g.windowLimit
         : '-';
+      const busyRej = typeof g.rejectedBusy === 'number' ? g.rejectedBusy : 0;
+      const rateRej = typeof g.rejectedRate === 'number' ? g.rejectedRate : 0;
+      // nextAvailableInMs 在 busy 时是 null（要等这一轮结束才能算间隔），因此不显示。
+      const nextText = typeof g.nextAvailableInMs === 'number' && g.nextAvailableInMs > 0
+        ? untilText(g.nextAvailableInMs)
+        : '';
       const stat = (k, v, title) => h('div', { className: 'wai-stat', title: title || null },
         h('div', { className: 'wai-stat-k' }, k),
         h('div', { className: 'wai-stat-v' }, v));
@@ -1712,15 +1790,26 @@ window.__ModuleLoader__.load({
           h('span', { className: 'wai-live-dot', 'data-busy': busy ? 'true' : 'false' }),
           h('span', { className: 'wai-live-title' }, T.liveTitle),
           h('span', { className: 'wai-live-state' }, busy ? T.liveBusy : T.liveIdle),
+          nextText ? h('span', { className: 'wai-live-next' }, nextText) : null,
           h('button', { className: 'wai-btn wai-btn-ghost wai-live-refresh', onClick: load }, T.liveRefresh)),
         h('div', { className: 'wai-stats' },
           stat(T.liveQuota, quota),
           stat(T.liveSpace, spaceHeld ? T.liveSpaceHeld : T.liveSpaceFree),
           stat(T.liveDiscussions, String((d.storeStats && d.storeStats.discussions) || 0)),
           stat(T.liveTotal, String(typeof g.totalCalls === 'number' ? g.totalCalls : 0))),
+        // 拒绝数非零是「你刚才那条被拦了」的唯一痕迹，纯灰同色排在窗口用量下面会被扫过去。
+        // 上警示色，并补一句文字（只靠颜色对色觉障碍无效）。
         h('div', { className: 'wai-live-meta' },
-          T.liveBusyCount + ' ' + (typeof g.rejectedBusy === 'number' ? g.rejectedBusy : 0)
-          + ' · ' + T.liveRateCount + ' ' + (typeof g.rejectedRate === 'number' ? g.rejectedRate : 0)),
+          busyRej + rateRej > 0
+            ? h('span', { className: 'wai-rej-mark', title: T.liveRejTip })
+            : null,
+          T.liveBusyCount + ' ',
+          h('span', { className: busyRej > 0 ? 'wai-rej wai-rej-on' : 'wai-rej' }, String(busyRej)),
+          ' · ' + T.liveRateCount + ' ',
+          h('span', { className: rateRej > 0 ? 'wai-rej wai-rej-on' : 'wai-rej' }, String(rateRej)),
+          busyRej + rateRej > 0
+            ? h('span', { className: 'wai-rej-tip' }, ' · ' + T.liveRejTip)
+            : null),
         recent.length
           ? h('div', { className: 'wai-live-recent' },
             h('button', {
@@ -1739,7 +1828,7 @@ window.__ModuleLoader__.load({
                     h('span', { className: 'wai-live-meta-line' },
                       h('button', {
                         className: 'wai-live-id',
-                        title: T.liveCopyId,
+                        title: T.liveCopyId + ' · ' + String(r.id || ''),
                         onClick: () => {
                           try {
                             Promise.resolve(navigator.clipboard.writeText(String(r.id || '')))
@@ -1747,7 +1836,7 @@ window.__ModuleLoader__.load({
                               .catch(() => {});
                           } catch (e) { /* ignore */ }
                         },
-                      }, copiedId === r.id ? T.copied : String(r.id || '')),
+                      }, copiedId === r.id ? T.copied : shortId(r.id)),
                       when ? h('span', { className: 'wai-live-when' }, when) : null,
                       chars ? h('span', { className: 'wai-live-when' }, chars) : null));
                 }))
