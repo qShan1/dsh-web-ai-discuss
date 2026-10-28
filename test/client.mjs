@@ -270,7 +270,7 @@ effects.length = 0;
 const panelTree = mainSlot.component({});
 const panelText = textOf(panelTree);
 check('面板：含定位说明', panelText.includes('外部讨论通道'), panelText.slice(0, 60));
-check('面板：含构建戳 0.4.2', panelText.includes('build 0.4.3'), panelText.slice(0, 140));
+check('面板：含构建戳 0.5.0', panelText.includes('build 0.5.0'), panelText.slice(0, 140));
 check('面板：含三个分区标签', panelText.includes('概览') && panelText.includes('预设') && panelText.includes('设置'), panelText.slice(0, 400));
 check('面板：首屏停在概览分区（不含设置字段）',
   panelText.includes('运行状态') && !panelText.includes('窗口上限'), panelText.slice(0, 400));
@@ -317,6 +317,35 @@ check('设置区：渲染保存/重新读取/恢复默认按钮',
 check('设置区：GET 打到 /settings 路由',
   fetchCalls.some((f) => f.url === '/web-ai-discuss/api/settings'),
   fetchCalls.map((f) => f.url));
+
+// 入口位置按「两个独立勾选框」呈现（placement 枚举对外仍是 sidebar/settings/both）：
+// 勾选框的组合与枚举一一映射，两个都不勾没有对应值，必须就地挡住。
+resetHooks();
+const settingsTree = mainSlot.component({});
+// 字段标签在 .wai-field 下、勾选框在其中的 .wai-check 里，取整行文本判断。
+const fieldsWithCheck = collectByClass(settingsTree, 'wai-field')
+  .filter((f) => collectByClass(f, 'wai-check').length === 1)
+  .map((f) => textOf(f));
+const checkboxLabels = fieldsWithCheck
+  .filter((t) => t.includes('侧边栏图标') || t.includes('设置页分区'));
+check('设置区：入口位置拆成两个勾选框（侧边栏图标 / 设置页分区）',
+  checkboxLabels.length === 2
+  && checkboxLabels.some((t) => t.includes('侧边栏图标'))
+  && checkboxLabels.some((t) => t.includes('设置页分区')),
+  checkboxLabels);
+const selectCount = (() => {
+  let n = 0;
+  const walk = (node) => {
+    if (!node || typeof node !== 'object' || node === false) return;
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    if (typeof node.type === 'function') { walk(renderComponent(node)); return; }
+    if (node.type === 'select') n += 1;
+    if (node.props) walk(node.props.children);
+  };
+  walk(settingsTree);
+  return n;
+})();
+check('设置区：入口位置不再是下拉框', selectCount === 0, selectCount);
 
 // 切到「预设」分区
 check('切到预设分区成功', clickTab('预设'));

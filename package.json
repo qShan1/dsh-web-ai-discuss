@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-ai-discuss",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "private": true,
   "description": "把已登录的网页版 DeepSeek 接入 DSH 工作流，作为外部思路讨论来源（经 ego lite 桥接，零协议构造）。",
   "type": "module",

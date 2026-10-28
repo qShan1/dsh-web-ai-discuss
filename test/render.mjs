@@ -145,11 +145,17 @@ const ctx = {
   },
   layout: { selectPanel: () => {} },
 };
+// 让 placement='both'：侧边栏/主面板与 settings.section 两条入口都注册，
+// 才能把 flat 模式的设置页一起渲染出来验收。
+lsData['dsh-web-ai-discuss:ui'] = JSON.stringify({ placement: 'both', composerDock: true });
 mod.apply(ctx);
 const pick = (name) => registered.find((r) => r.spec.name === name);
 const panelComp = pick('main').comp;
 const cardComp = pick('tool.call.toolview').comp;
 const iconComp = pick('sidebar.panellist').comp;
+// settings.section 那条入口渲染的是 flat 模式（无线 Tab、整块平铺），
+// 与侧边栏/主面板是两套排版，必须单独出图验收，否则「设置页界面没改」这类问题看不出来。
+const settingsComp = pick('settings.section').comp;
 
 // ── 序列化 ──
 const cssOf = (style) => Object.entries(style || {})
@@ -298,6 +304,10 @@ const panelCollapsed = await renderStable(panelComp, {}, { expanded: false });
 const panelExpanded = await renderStable(panelComp, {}, { expanded: true });
 const panelPreset = await renderStable(panelComp, {}, { expanded: false, tab: 'preset' });
 const panelSettings = await renderStable(panelComp, {}, { expanded: false, tab: 'settings' });
+// settings.section 入口：flat 模式，没有 Tab，概览/预设/设置一路平铺在一个面板里。
+// 这条路径此前完全没出过图，所以「设置页界面没改」是验收盲区。
+const flatLight = await renderStable(settingsComp, {}, { expanded: true });
+const flatDark = await renderStable(settingsComp, {}, { expanded: true });
 const cardOk = await renderStable(cardComp, { phase: 'result', block: cardOf(ENVELOPE), sessionId: 'demo' }, { expanded: false });
 const cardBusy = await renderStable(cardComp, {
   phase: 'result', sessionId: 'demo',
@@ -315,6 +325,8 @@ const variants = [
   ['panel-dark-expanded', true, panelExpanded, null],
   ['panel-preset', false, panelPreset, null],
   ['panel-settings', false, panelSettings, null],
+  ['panel-flat', false, flatLight, null],
+  ['panel-flat-dark', true, flatDark, null],
 ];
 for (const [name, dark, panelHtml, _] of variants) {
   const side = `<div class="frame side"><div class="bar">会话卡片</div><div class="scroll">
@@ -325,4 +337,4 @@ for (const [name, dark, panelHtml, _] of variants) {
   const narrow = `<div class="frame narrow"><div class="bar">侧边栏 340px</div><div class="scroll">${panelHtml}</div></div>`;
   await writeFile(path.join(OUT, `${name}.html`), page({ dark, expanded: name.includes('expanded'), body: main + narrow + side }), 'utf8');
 }
-console.log('wrote out/panel.html, panel-expanded.html, panel-dark.html, panel-dark-expanded.html, panel-preset.html, panel-settings.html');
+console.log('wrote out/panel.html, panel-expanded.html, panel-dark.html, panel-dark-expanded.html, panel-preset.html, panel-settings.html, panel-flat.html, panel-flat-dark.html');

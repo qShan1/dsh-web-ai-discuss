@@ -1,5 +1,5 @@
 /**
- * dsh-web-ai-discuss — 客户端（浏览器侧）模块。v0.4.3（未发布开发版）
+ * dsh-web-ai-discuss — 客户端（浏览器侧）模块。v0.5.0（未发布开发版）
  *
  * 三块 UI：
  *   1. sidebar.panellist  侧边栏格子（图标）
@@ -29,7 +29,7 @@ window.__ModuleLoader__.load({
     const TOOL_DISCUSS = 'web_ai_discuss';
     const SETTINGS_API = '/web-ai-discuss/api/settings';
     // 构建戳：面板头部显示。看到它 = 浏览器在跑这版代码；看不到 = client 模块没装载。
-    const CLIENT_BUILD = '0.4.3';
+    const CLIENT_BUILD = '0.5.0';
 
     const isZh = () => {
       try {
@@ -68,10 +68,8 @@ window.__ModuleLoader__.load({
         groupGuard: '护栏',
         groupJudge: '发送与判定',
         groupOutput: '输出与扩展',
-        placementLabel: '入口位置',
-        placementOpts: { sidebar: '侧边栏图标', settings: '设置页分区', both: '两处都显示' },
-        dockLabel: '输入框下方快捷入口',
-        placementNote: '保存后几秒内自动挪动入口或刷新页面生效；结果卡片不受影响。',
+        placementNote: '保存后几秒内自动挪动入口或刷新页面生效；结果卡片不受影响。两处都勾即两边都显示，两处都不勾不保存。',
+        placementEmpty: '两个入口至少要勾一处，否则面板将无处可打开。',
         guardTitle: '三重护栏（不可关闭）',
         guards: [
           ['全局串行', '同一时刻只允许一次讨论，并发调用立刻返回 code=busy'],
@@ -156,10 +154,8 @@ window.__ModuleLoader__.load({
         groupGuard: 'Guardrails',
         groupJudge: 'Send & completion',
         groupOutput: 'Output & extensions',
-        placementLabel: 'Entry placement',
-        placementOpts: { sidebar: 'Sidebar icon', settings: 'Settings section', both: 'Both' },
-        dockLabel: 'Composer chip',
-        placementNote: 'Moves within seconds of saving, or on refresh. Result cards are unaffected.',
+        placementNote: 'Moves within seconds of saving, or on refresh. Result cards are unaffected. Tick both to show in both places; ticking neither cannot be saved.',
+        placementEmpty: 'Keep at least one entry ticked, or the panel has nowhere to open.',
         guardTitle: 'Three guardrails (not disableable)',
         guards: [
           ['Global serial', 'One discussion at a time; a concurrent call returns code=busy'],
@@ -516,12 +512,17 @@ window.__ModuleLoader__.load({
 .wai-btn-ghost:hover { color: var(--dsw-alias-label-primary, #1a1a1a); }
 
 /* ── 设置表单 ── */
-.wai-fields { display: grid; grid-template-columns: minmax(0, 1fr); }
+/* 列数由网格自己算：每列至少 300px，能塞几列就排几列。
+   不要按面板宽度写死断点——侧边栏 340px、主面板宽栏、宿主设置页是三种不同宽度，
+   写死断点会让其中一种永远落不到「两列」，看起来就像界面根本没改。
+   下限取 300px 是因为标签(≈120)+控件(≈150)能舒适放下；340px 会让 706px 的
+   宿主设置页差 2px 退回单列。 */
+.wai-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); column-gap: 28px; }
 .wai-field {
   display: grid;
-  grid-template-columns: minmax(120px, max-content) minmax(0, 170px) minmax(0, max-content);
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr) minmax(0, max-content);
   align-items: center;
-  gap: 12px;
+  gap: 2px 8px;
   padding: 6px 0;
   font-size: 12.5px;
 }
@@ -843,17 +844,9 @@ window.__ModuleLoader__.load({
   .wai-level-hint { flex: 1 1 100%; margin-top: -2px; }
   .wai-seg-item { padding: 4px 10px; }
 }
-/* 主面板这类宽栏：设置项排两列，别让右半屏一直空着 */
+/* 主面板这类宽栏：补两处只属于宽屏的排版 */
 @container wai (min-width: 620px) {
-  .wai-fields {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: 28px;
-  }
-  .wai-fields .wai-field {
-    grid-template-columns: minmax(0, max-content) minmax(0, 1fr) minmax(0, max-content);
-    gap: 2px 8px;
-  }
-  .wai-fields .wai-field-wide { grid-column: 1 / -1; }
+  .wai-field-wide { grid-column: 1 / -1; }
 
   /* 三个页签不必均分整屏：按内容收口，读起来像一段分段控件 */
   .wai-tabs { display: inline-flex; }
@@ -1157,7 +1150,8 @@ window.__ModuleLoader__.load({
     }
 
     const SETTINGS_FIELDS = [
-      { key: 'placement', group: 'ui', zh: '入口位置', en: 'Placement', kind: 'select', optKeys: ['sidebar', 'settings', 'both'] },
+      { key: 'placementSidebar', group: 'ui', zh: '侧边栏图标', en: 'Sidebar icon', kind: 'bool', pseudo: true },
+      { key: 'placementSettings', group: 'ui', zh: '设置页分区', en: 'Settings section', kind: 'bool', pseudo: true },
       { key: 'composerDock', group: 'ui', zh: '输入框下方快捷入口', en: 'Composer chip', kind: 'bool' },
       { key: 'minGapMs', group: 'guard', zh: '最小间隔', en: 'Min gap', unit: 'ms', floorKey: 'minGapMs' },
       { key: 'jitterMs', group: 'guard', zh: '随机抖动', en: 'Jitter', unit: 'ms', floorKey: 'jitterMs' },
@@ -1219,15 +1213,19 @@ window.__ModuleLoader__.load({
       const effective = (data && data.effective) || {};
       const floor = (data && data.floor) || {};
 
+      /** placement 是枚举（sidebar/settings/both），界面按「两个勾选框」呈现：
+          勾选组合与枚举是一一映射，两个都不勾没有对应值，因此就地挡住并提示。 */
+      const sideOf = (v) => v === 'sidebar' || v === 'both';
+      const settingsOf = (v) => v === 'settings' || v === 'both';
+
       const collectChanges = () => {
         const out = {};
         for (const f of SETTINGS_FIELDS) {
+          if (f.pseudo) continue; // 两个位置勾选框合成一个 placement 字段
           const node = refs.current[f.key];
           if (!node) continue;
           if (f.kind === 'bool') {
             if (node.checked !== effective[f.key]) out[f.key] = node.checked;
-          } else if (f.kind === 'select') {
-            if (node.value !== (effective[f.key] ?? '')) out[f.key] = node.value;
           } else if (f.kind === 'text') {
             const v = node.value.trim();
             if (v !== (effective[f.key] ?? '')) out[f.key] = v;
@@ -1236,11 +1234,24 @@ window.__ModuleLoader__.load({
             if (Number.isFinite(n) && Math.trunc(n) !== effective[f.key]) out[f.key] = Math.trunc(n);
           }
         }
+        const sideNode = refs.current.placementSidebar;
+        const settingsNode = refs.current.placementSettings;
+        if (sideNode && settingsNode) {
+          const side = sideNode.checked === true;
+          const inSettings = settingsNode.checked === true;
+          const next = side && inSettings ? 'both' : side ? 'sidebar' : inSettings ? 'settings' : null;
+          if (next === null) out.__placementInvalid = true;
+          else if (next !== (effective.placement ?? 'sidebar')) out.placement = next;
+        }
         return out;
       };
 
       const submit = () => {
         const payload = collectChanges();
+        if (payload.__placementInvalid) {
+          setSaveState({ phase: 'error', message: T.placementEmpty });
+          return;
+        }
         if (Object.keys(payload).length === 0) return;
         setSaveState({ phase: 'saving', message: null });
         fetch(SETTINGS_API, {
@@ -1305,6 +1316,17 @@ window.__ModuleLoader__.load({
             h('div', { className: 'wai-section-label' }, label),
             gk === 'ui' ? h('div', { className: 'wai-muted', style: { marginBottom: 4 } }, T.placementNote) : null,
             h('div', { className: 'wai-fields' }, fields.map((f) => {
+              if (f.pseudo) {
+                // 两个位置勾选框：各表一个布尔，落盘时合成 placement 枚举。
+                const on = f.key === 'placementSidebar'
+                  ? sideOf(effective.placement ?? 'sidebar')
+                  : settingsOf(effective.placement ?? 'sidebar');
+                return h('div', { className: 'wai-field', key: f.key },
+                  h('span', { className: 'wai-field-label' }, zh ? f.zh : f.en),
+                  h('label', { className: 'wai-check' },
+                    h('input', { type: 'checkbox', defaultChecked: on, ref: bindRef(f.key) }),
+                    h('span', { className: 'wai-field-hint' }, on ? 'on' : 'off')));
+              }
               const v = effective[f.key];
               if (f.kind === 'bool') {
                 return h('div', { className: 'wai-field', key: f.key },
@@ -1312,17 +1334,6 @@ window.__ModuleLoader__.load({
                   h('label', { className: 'wai-check' },
                     h('input', { type: 'checkbox', defaultChecked: v === true, ref: bindRef(f.key) }),
                     h('span', { className: 'wai-field-hint' }, v === true ? 'on' : 'off')));
-              }
-              if (f.kind === 'select') {
-                return h('div', { className: 'wai-field', key: f.key },
-                  h('span', { className: 'wai-field-label' }, zh ? f.zh : f.en),
-                  h('select', {
-                    className: 'wai-input',
-                    defaultValue: v ?? 'sidebar',
-                    ref: bindRef(f.key),
-                  }, f.optKeys.map((opt) => h('option', { key: opt, value: opt },
-                    (T.placementOpts && T.placementOpts[opt]) || opt))),
-                  h('span', null));
               }
               if (f.kind === 'text') {
                 return h('div', { className: 'wai-field wai-field-wide', key: f.key },

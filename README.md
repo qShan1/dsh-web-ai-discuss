@@ -189,6 +189,10 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
 | 设置页分区 | `placement` 含 `settings` 时，在设置里占一页；此处**不分区**（表单铺开，设置项必须一眼可见） |
 | 输入框下方 | `composerDock=true` 且 `placement` 含侧边栏时，输入框下方多一个快捷入口 |
 
+`placement`（`sidebar` / `settings` / `both`）在界面上是两个**独立勾选框**（侧边栏图标 / 设置页分区），
+勾选组合与枚举一一映射：都勾 = `both`，只勾前者 = `sidebar`，只勾后者 = `settings`。
+两个都不勾没有对应枚举值，保存时就地拦下并提示（`placementEmpty`），不会写入半截状态。
+
 **为什么侧边栏用 Tab 而不是一路铺开**：宿主侧边栏只有 ~340px 宽，铺开会让人为了看一眼
 预设或设置一路往下翻（实测反馈）。改成三个分区后，首屏只留概览，窄栏里**每个分区都在一两屏内看完**。
 
@@ -207,6 +211,11 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
   避免宽栏下正文被拉成超长单行。宽栏（`@container wai (min-width: 620px)`）额外把设置项排成两列、`.wai-field-wide`（Webhook URL / 钩子模块）跨整行、
   Tab 条按内容收口、预设行合成单行（id/名称 → 说明 → 操作）、说明块 `72ch` 收口；
   运行状态那四个指标在宽栏下是「均分但整条 `max-width: 620px`」——纯均分会让 `2 / 6` 和 `11` 隔屏相望，纯按内容取宽又把它们挤到左半边；
+- **设置项列数由网格自己算，不写死断点**：`.wai-fields` 用 `repeat(auto-fit, minmax(300px, 1fr))`。
+  面板会出现在三种宽度里（侧边栏 340px、主面板宽栏、宿主设置页给出的第三种），
+  把「两列」绑在 `@container wai (min-width: 620px)` 上时，宿主设置页永远命中不到那条规则 ——
+  表现就是「设置页的界面根本没改」。300px 这个下限是量出来的：宿主设置页给字段区 706px，
+  写到 340px 会差 2px 退回单列。改动这类阈值必须先量实际像素，不能凭感觉；
 - **保存条吸底**：`.wai-actions-sticky` 用 `bottom: calc(-1 * var(--wai-pad-b))` + 等值负 margin 把底边贴平滚动区，
   设置很长时不用滚回去点保存；`--wai-pad-b` 在窄栏覆写为 26px，两个方向同时跟着变，不会留一条横贯的白带；
 - 交互状态（hover / focus-visible / active / disabled / 选中 / 滚动条 / 选区）由注入的命名空间 CSS `.wai-*` 承担，不覆盖宿主选择器；
@@ -279,8 +288,8 @@ stableSamples: 3    # 连续几次相同判定完成（下限 2）
 本机 GUI 需要进程内 launch token，宿主内截图通道不可用；但本机有 Chrome，可以对离线渲染产物做**真实光栅截图**：
 
 ```bash
-node test/render.mjs     # 用真实组件函数渲染静态页到 out/panel*.html（亮/暗 × 概览/展开/预设/设置 六种）
-node test/client.mjs     # 桩 React 加载真实 client.js：slot 注册、文案、渲染、Tab 切换、位置切换 58 条断言
+node test/render.mjs     # 用真实组件函数渲染静态页到 out/panel*.html（亮/暗 × 概览/展开/预设/设置，外加 settings.section 的 flat 平铺版两种）
+node test/client.mjs     # 桩 React 加载真实 client.js：slot 注册、文案、渲染、Tab 切换、位置切换 60 条断言
 
 # 真截图（headless Chrome）
 chrome --headless=new --no-sandbox --disable-gpu --hide-scrollbars \
@@ -361,9 +370,9 @@ HTTP 契约（同源守卫，exact 路由 `/web-ai-discuss/api/settings`）：
 
 ```bash
 node test/cases.mjs    # 宿主侧契约与护栏，24/24
-node test/client.mjs   # 客户端注册与渲染（桩 React），58/58
+node test/client.mjs   # 客户端注册与渲染（桩 React），60/60
 node test/styles.mjs   # 样式注入回归（过期 <style> 必须被替换），10/10
-node test/render.mjs   # 离线渲染 out/panel*.html（亮/暗 × 概览/展开/预设/设置）
+node test/render.mjs   # 离线渲染 out/panel*.html（亮/暗 × 概览/展开/预设/设置 + flat 平铺设置页）
 node test/smoke.mjs status|probe|read|discuss "问题"   # 真实 ego 冒烟
 node test/smoke.mjs preset review:strict "问题"        # 预设 + 档位的真实冒烟
 ```
