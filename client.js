@@ -124,7 +124,7 @@ window.__ModuleLoader__.load({
         tabPreset: '预设',
         tabSettings: '设置',
         levelTitle: '档位',
-        levelHint: '同一套框架三档强度，按这次要多狠来调',
+        levelHint: '同一套框架三档深度：极简 / 标准 / 深度，按这次要多细来调',
         presetTitle: '预设提示词',
         presetHint: '把提问套进固定回答结构，原始提问原样保留。调用时传 preset=<id>（可加 :<档位>）。',
         presetCopy: '复制模板',
@@ -220,7 +220,7 @@ window.__ModuleLoader__.load({
         tabPreset: 'Presets',
         tabSettings: 'Settings',
         levelTitle: 'Level',
-        levelHint: 'Three strengths for the same framework; pick how hard to push',
+        levelHint: 'Three depths for the same framework: brief / standard / deep',
         presetTitle: 'Preset prompts',
         presetHint: 'Wrap your question in a fixed answer structure; the original question is kept verbatim. Pass preset=<id> when calling web_ai_discuss, optionally with :<level>.',
         presetCopy: 'Copy template',
@@ -1902,7 +1902,7 @@ window.__ModuleLoader__.load({
       // 档位清单取自第一条预设的 levels（宿主侧统一提供），缺省退回三档内置。
       const levels = (state.items[0] && Array.isArray(state.items[0].levels) && state.items[0].levels.length)
         ? state.items[0].levels
-        : [{ id: 'light', title: '轻' }, { id: 'normal', title: '标准' }, { id: 'strict', title: '严' }];
+        : [{ id: 'light', title: '极简' }, { id: 'normal', title: '标准' }, { id: 'strict', title: '深度' }];
       const levelOf = (item) => (Array.isArray(item.levels) ? item.levels : [])
         .find((l) => l.id === level) || null;
 

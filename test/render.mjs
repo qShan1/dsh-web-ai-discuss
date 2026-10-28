@@ -107,9 +107,9 @@ const STATUS_BODY = {
       hint: '找出会让它失败的问题', hintEn: 'Find what would break it',
       defaultLevel: 'normal',
       levels: [
-        { id: 'light', title: '轻', titleEn: 'Light', hint: '只说最致命的一个问题', template: '严审此策，惟指其最致命者。\n\n{prompt}' },
-        { id: 'normal', title: '标准', titleEn: 'Normal', hint: '按三段结构回答', template: '严审此策，勿褒勿述。\n列「致命 / 要紧 / 改一处足矣」。\n\n{prompt}' },
-        { id: 'strict', title: '严', titleEn: 'Strict', hint: '专找会推翻它的问题', template: '以最苛者观之，专索可覆其议者；存疑则标。\n列「致命 / 要紧 / 可议而可受 / 改一处足矣」。\n\n{prompt}' },
+        { id: 'light', title: '极简', titleEn: 'Brief', hint: '一到两句，只要结论', template: '只给结论，一到两句：从下面的结构里挑最关键的一条直接说。 列出会让这件事失败的问题，按「致命 / 要紧 / 可商量」分档。\n\n{prompt}' },
+        { id: 'normal', title: '标准', titleEn: 'Standard', hint: '按结构给，每项一到两行', template: '按下面的结构逐项回答，每项一到两行。第一项开头、最后一项结尾，中间不穿插铺垫。 列出会让这件事失败的问题，按「致命 / 要紧 / 可商量」分档；最后给一条「只改一处改哪里」。\n\n{prompt}' },
+        { id: 'strict', title: '深度', titleEn: 'Deep', hint: '逐条展开，给依据与边界', template: '深度分析：按下面的结构逐项展开，每条给出依据、触发条件与代价，拿不准的直接标注为不确定。 列出会让这件事失败的问题，按「致命 / 要紧 / 可商量」分档。\n\n{prompt}' },
       ],
     },
     {
@@ -117,9 +117,9 @@ const STATUS_BODY = {
       hint: '按维度对比多个方案', hintEn: 'Compare options by dimension',
       defaultLevel: 'normal',
       levels: [
-        { id: 'light', title: '轻', titleEn: 'Light', hint: '只说最大差异', template: '以一端衡诸案，明指所取。\n\n{prompt}' },
-        { id: 'normal', title: '标准', titleEn: 'Normal', hint: '按维度给取舍建议', template: '以一端衡诸案，勿逐述。\n先列所衡之端，次以表较之，终指所取及所恃。\n\n{prompt}' },
-        { id: 'strict', title: '严', titleEn: 'Strict', hint: '找出被忽略的权衡', template: '以一端衡诸案，较毕必有所取，且言其何时不可行。\n端按轻重为序（三至六），以表陈之。\n\n{prompt}' },
+        { id: 'light', title: '极简', titleEn: 'Brief', hint: '一到两句，只要结论', template: '只给结论，一到两句：从下面的结构里挑最关键的一条直接说。 把几个选项放在同一组维度上逐项对齐。\n\n{prompt}' },
+        { id: 'normal', title: '标准', titleEn: 'Standard', hint: '按结构给，每项一到两行', template: '按下面的结构逐项回答，每项一到两行。 把几个选项放在同一组维度上逐项对齐，最后指哪个更好、它在什么条件下更好。\n\n{prompt}' },
+        { id: 'strict', title: '深度', titleEn: 'Deep', hint: '逐条展开，给依据与边界', template: '深度分析：按下面的结构逐项展开，每条给出依据、触发条件与代价。 把几个选项放在同一组维度上逐项对齐。\n\n{prompt}' },
       ],
     },
   ],

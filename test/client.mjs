@@ -212,9 +212,9 @@ const STATUS_BODY = {
       hint: '挑出致命问题',
       defaultLevel: 'normal',
       levels: [
-        { id: 'light', title: '轻', hint: '只说最致命的问题', template: '严审此策，惟指其最致命者。\n\n{prompt}' },
-        { id: 'normal', title: '标准', hint: '默认强度', template: '严审此策，勿褒勿述。\n列「致命 / 要紧 / 改一处足矣」。\n\n{prompt}' },
-        { id: 'strict', title: '严', hint: '专找推翻它的问题', template: '以最苛者观之，专索可覆其议者。\n\n{prompt}' },
+        { id: 'light', title: '极简', hint: '一到两句，只要结论', template: '只给结论，一到两句。\n\n{prompt}' },
+        { id: 'normal', title: '标准', hint: '按结构给，每项一到两行', template: '按下面的结构逐项回答。\n\n{prompt}' },
+        { id: 'strict', title: '深度', hint: '逐条展开，给依据与边界', template: '深度分析：按下面的结构逐项展开。\n\n{prompt}' },
       ],
     },
     {
@@ -223,9 +223,9 @@ const STATUS_BODY = {
       hint: '按维度比较',
       defaultLevel: 'normal',
       levels: [
-        { id: 'light', title: '轻', hint: '只说最大差异', template: '对比下面几项，只说最大差异。\n\n{prompt}' },
-        { id: 'normal', title: '标准', hint: '默认强度', template: '按维度对比下面几项，给出取舍建议。\n\n{prompt}' },
-        { id: 'strict', title: '严', hint: '找出被忽略的权衡', template: '严格对比下面几项，找出被忽略的权衡与失败条件。\n\n{prompt}' },
+        { id: 'light', title: '极简', hint: '一到两句，只要结论', template: '只给结论，一到两句。\n\n{prompt}' },
+        { id: 'normal', title: '标准', hint: '按结构给，每项一到两行', template: '按下面的结构逐项回答。\n\n{prompt}' },
+        { id: 'strict', title: '深度', hint: '逐条展开，给依据与边界', template: '深度分析：按下面的结构逐项展开。\n\n{prompt}' },
       ],
     },
   ],
@@ -399,8 +399,8 @@ check('预设区：渲染预设条目与 id',
   presetText.includes('review') && presetText.includes('compare')
   && presetText.includes('方案评审') && presetText.includes('方案对比'),
   presetText.slice(presetText.indexOf('预设'), presetText.indexOf('预设') + 200));
-check('预设区：含档位分段控件（轻/标准/严）',
-  presetText.includes('轻') && presetText.includes('标准') && presetText.includes('严'), presetText.slice(0, 300));
+check('预设区：含档位分段控件（极简/标准/深度）',
+  presetText.includes('极简') && presetText.includes('标准') && presetText.includes('深度'), presetText.slice(0, 300));
 check('预设区：每条带「看模板」与「复制调用」',
   presetText.includes('看模板') && presetText.includes('复制调用'), presetText.slice(-300));
 check('预设区：当前档位标在条目上（:normal）', presetText.includes(':normal'), presetText.slice(0, 400));
@@ -414,7 +414,7 @@ check('预设区：当前档位标在条目上（:normal）', presetText.include
   if (btn) btn.props.onClick();
   resetHooks();
   const tmplText = textOf(mainSlot.component({}));
-  check('预设区：看模板后渲染模板预览', tmplText.includes('严审此策'), tmplText.slice(-400));
+  check('预设区：看模板后渲染模板预览', tmplText.includes('按下面的结构逐项回答'), tmplText.slice(-400));
 }
 
 // 侧边栏图标

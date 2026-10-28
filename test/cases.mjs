@@ -20,8 +20,9 @@ import path from 'node:path';
 import { Guard } from '../lib/guard.js';
 import { Mutex } from '../lib/mutex.js';
 import { resolveConfig } from '../lib/config.js';
-import { registerTools } from '../lib/tools.js';
+import { registerTools, cleanAnswer } from '../lib/tools.js';
 import { buildDiscussScript } from '../lib/script.js';
+import { PRESETS, PRESET_LEVELS, PRESET_LEVEL_IDS, applyPreset } from '../lib/presets.js';
 
 const FAKE_EGO = `const fs = require('node:fs');
 
@@ -524,6 +525,45 @@ const cases = [
     } finally {
       h.restore();
     }
+  }),
+
+  record('清洗：剥掉网页端引用角标的碎片（短横线行 + 数字行）', () => {
+    // 真实抓到的形态：句子后面的 `-\n11\n-\n22`
+    const raw = '改写就有 47 处。-\n11\n-\n22\n\n触发条件：grep 命中数超预算。';
+    const out = cleanAnswer(raw, 20000);
+    assert.equal(out, '改写就有 47 处。\n\n触发条件：grep 命中数超预算。');
+    // 正常的 markdown 列表不能被误伤：短横线后面跟的是文字，不是纯数字
+    const list = '- 第一项\n- 第二项\n- 第三项';
+    assert.equal(cleanAnswer(list, 20000), list);
+    // 编号列表同理
+    const ordered = '1. 甲\n2. 乙';
+    assert.equal(cleanAnswer(ordered, 20000), ordered);
+    return 'citation fragments stripped';
+  }),
+
+  record('预设：三档只改深度不改角度（结构段三档必须一致）', () => {
+    // 这是新旧语义最容易被改混的地方：档位曾经表示「严厉度」，现在表示「深度」。
+    // 一旦有人往某一档里塞角度差异（比如 light 只挑致命点、strict 才分档），
+    // 这条就会红——那说明档位又变成了「另一套预设」。
+    for (const p of PRESETS) {
+      const rendered = PRESET_LEVEL_IDS.map((lv) => p.templates[lv]);
+      for (const lv of PRESET_LEVEL_IDS) {
+        const tpl = p.templates[lv];
+        assert.ok(tpl.includes(p.structure), `${p.id}/${lv} 应包含该角度的结构段`);
+        assert.equal((tpl.match(/\{prompt\}/g) || []).length, 1, `${p.id}/${lv} 应恰含一个 {prompt}`);
+      }
+      const lens = PRESET_LEVEL_IDS.map((lv) => p.templates[lv].length);
+      assert.ok(lens[0] < lens[1] && lens[1] < lens[2], `${p.id} 模板长度应随深度递增：${lens}`);
+      // 结构段在末尾、档位规格在开头：三档去掉 {prompt} 之后尾巴必须逐字相同
+      const tails = rendered.map((x) => x.slice(x.indexOf(p.structure)));
+      assert.equal(new Set(tails).size, 1, `${p.id} 三档的角度结构必须完全一致`);
+    }
+    assert.deepEqual(PRESET_LEVELS.map((l) => l.title ?? l.zh), ['极简', '标准', '深度']);
+    // 极简档要明确「只挑最关键的一条」，否则会和结构里的分档要求打架
+    assert.ok(PRESETS[0].templates.light.includes('挑最关键的一条'));
+    const applied = applyPreset(PRESETS[0], '把 A 换成 B 会不会更快', 'light');
+    assert.ok(applied.endsWith('把 A 换成 B 会不会更快'), '原始提问必须原样收尾');
+    return 'depth-only tiers ok';
   }),
 
   record('检索：命中只回片段，不回全文（否则 20 条 = 几十万字符）', async () => {
