@@ -46,6 +46,7 @@
 - 「生成中停顿分不清完成」= 网页无生成态信号可读；回答文本非单调（431→35→61→83→316），跳变会重置稳定计数，默认 2.7s 窗口实测未误判。真截断时调 `stableSamples`，别改判据。
 - 改文件 anchor 找不到 = 行尾不符：`client.js` CRLF，`index.js`/`lib/*.js`/`test/*.mjs` LF。
 - 测试桩 `collectByClass` 只能遍历一次树（二次遍历退化成 loading）；多类名必须一次收全。
+- 「本地改完宿主没反应」= profile 里是 `github:` 安装，加载的是 `node_modules` 那份拷贝。手工 `cp` 进去会被依赖管理覆盖；正解是 `pnpm update dsh-web-ai-discuss` + **重启桌面应用**（换目录不触发 watcher，`touch` 入口无效）。自检：`/api/status` 有无 `guardrails.nextAvailableInMs`。
 
 ## 下一轮
 

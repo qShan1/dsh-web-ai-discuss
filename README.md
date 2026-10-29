@@ -46,6 +46,25 @@ plugin_manager({ action: 'install_bundle', target: '<绝对路径>/dsh-web-ai-di
 - 替换已安装的同名包需要重启 dsh
 - 不要手工编辑 profile 的 `package.json` 或 `cordis.patch.yml`
 
+### 从 GitHub 安装的副本：怎么让它吃到新提交
+
+如果 profile 里写的是 `"dsh-web-ai-discuss": "github:<owner>/<repo>"`，那**本地的改动不会生效**——
+宿主加载的是 `node_modules` 里那份从 GitHub 拉下来的拷贝，`git push` 之后还得让它重新解析：
+
+```bash
+pnpm update dsh-web-ai-discuss    # 在 <DSH_HOME>/profiles/<profile>/ 下执行
+```
+
+`dsh plugin --profile <name> ...` 会被拒绝（`profile is managed exclusively by the Electron application`），
+直接在该 profile 目录用 pnpm 即可。lockfile 里那条 `version:` 会从旧 commit 换到新 commit，
+之后**重启 DSH 桌面应用**才真正加载（换目录不会触发文件 watcher，`touch` 入口文件也不行）。
+
+验证是否生效：`GET /web-ai-discuss/api/status` 里应出现 `guardrails.nextAvailableInMs`；
+没有这个字段就说明跑的还是旧副本。
+
+**把文件手工拷进 `node_modules` 是无效的**，宿主侧的依赖管理会把它覆盖回去。开发期建议改用
+link 安装，改完 `set_bundle` 重载即可，省掉 push → update → 重启这一串。
+
 ## 工具契约
 
 ### `web_ai_discuss`
