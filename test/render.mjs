@@ -107,7 +107,7 @@ const STATUS_BODY = {
       hint: '找出会让它失败的问题', hintEn: 'Find what would break it',
       defaultLevel: 'normal',
       levels: [
-        { id: 'light', title: '极简', titleEn: 'Brief', hint: '一到两句，只要结论', template: '只输出两行，格式固定，不要标题：\n结论：（一句话判断，40 字内）\n依据：（从下面的结构里挑最关键的一条，一句话说清为什么，60 字内）\n不分档、不列举、不铺垫背景。 列出会让这件事失败的问题，按「致命 / 要紧 / 可商量」分档；最后给一条「只改一处改哪里」。\n\n{prompt}' },
+        { id: 'light', title: '极简', titleEn: 'Brief', hint: '一到两句，只要结论', template: '简短地给判断：一句话说结论，再补一句最要紧的理由。（只盯会让它失败的地方）\n\n{prompt}' },
         { id: 'normal', title: '标准', titleEn: 'Standard', hint: '按结构给，每项一到两行', template: '按下面的结构逐项回答，每项一到两行。第一项开头、最后一项结尾，中间不穿插铺垫。 列出会让这件事失败的问题，按「致命 / 要紧 / 可商量」分档；最后给一条「只改一处改哪里」。\n\n{prompt}' },
         { id: 'strict', title: '深度', titleEn: 'Deep', hint: '逐条展开，给依据与边界', template: '深度分析：按下面的结构逐项展开，每条给出依据、触发条件与代价，拿不准的直接标注为不确定。 列出会让这件事失败的问题，按「致命 / 要紧 / 可商量」分档。\n\n{prompt}' },
       ],
@@ -117,7 +117,7 @@ const STATUS_BODY = {
       hint: '按维度对比多个方案', hintEn: 'Compare options by dimension',
       defaultLevel: 'normal',
       levels: [
-        { id: 'light', title: '极简', titleEn: 'Brief', hint: '一到两句，只要结论', template: '只输出两行，格式固定，不要标题：\n结论：（一句话判断，40 字内）\n依据：（一句话说清为什么，60 字内）\n不分档、不列举、不铺垫背景。 把几个选项放在同一组维度上逐项对齐。\n\n{prompt}' },
+        { id: 'light', title: '极简', titleEn: 'Brief', hint: '一到两句，只要结论', template: '简短地给判断：一句话说结论，再补一句最要紧的理由。（只盯选项之间的关键差异）\n\n{prompt}' },
         { id: 'normal', title: '标准', titleEn: 'Standard', hint: '按结构给，每项一到两行', template: '按下面的结构逐项回答，每项一到两行。 把几个选项放在同一组维度上逐项对齐，最后指哪个更好、它在什么条件下更好。\n\n{prompt}' },
         { id: 'strict', title: '深度', titleEn: 'Deep', hint: '逐条展开，给依据与边界', template: '深度分析：按下面的结构逐项展开，每条给出依据、触发条件与代价。 把几个选项放在同一组维度上逐项对齐。\n\n{prompt}' },
       ],
